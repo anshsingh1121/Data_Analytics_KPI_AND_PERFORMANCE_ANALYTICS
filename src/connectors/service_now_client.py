@@ -57,9 +57,9 @@ class ServiceNowClient(ApiClient):
         if query:
             params["sysparm_query"] = query
             
-        response = self.get(endpoint, params=params)
         try:
+            response = self.get(endpoint, params=params)
             return int(response.get('result', {}).get('stats', {}).get('count', 0))
-        except (ValueError, TypeError) as e:
-            logger.error(f"Failed to parse count: {e}")
-            return 0
+        except Exception as e:
+            logger.debug(f"Stats API unavailable for {table_name}: {e}")
+            return -1

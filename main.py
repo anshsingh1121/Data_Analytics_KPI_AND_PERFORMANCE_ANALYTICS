@@ -71,22 +71,47 @@ def cmd_validate_config(args):
         return 1
 
 def cmd_test_connection(args):
-    """Tests connectivity, authentication, and table access against configured API."""
+    """Tests connectivity, authentication, table read access, and required fields for both tables."""
     print("=" * 70)
-    print("DATA CERTIFICATION KPI SYSTEM — API CONNECTION TEST")
+    print("DATA CERTIFICATION KPI SYSTEM — API & TABLE FIELD VERIFICATION")
     print("=" * 70)
     loader = ConfigLoader()
     api_cfg = loader.get_api_config()
     app_mode = loader.get_app_mode()
 
-    if not api_cfg.get('base_url') or app_mode == 'demo':
-        print("[DEMO MODE ACTIVE] No live API credentials required.")
-        print("To test a live connection, set APP_MODE=live and provide API_BASE_URL, API_USERNAME, and API_PASSWORD in .env.")
-        print("\nSynthetic demo pipeline is ready for immediate local use.")
+    if not api_cfg.get('base_url'):
+        print("[DEMO MODE ACTIVE] No API_BASE_URL provided in .env.")
+        print("To test a live connection on your corporate machine:")
+        print("  1. Create .env with API_BASE_URL, API_USERNAME, and API_PASSWORD")
+        print("  2. Set APP_MODE=live in .env")
+        print("  3. Re-run 'python main.py test-connection'")
+        print("\nVerifying local synthetic tables for testing readiness:")
+        _audit_table_fields("data/synthetic/cert_tasks.csv", "cert_task (Table 1)", [
+            ('sys_id', 'task_id (Primary Key)'),
+            ('number', 'task_number (Task ID)'),
+            ('state', 'status (Task State)'),
+            ('assigned_to', 'assigned_to (Certifier)'),
+            ('cmdb_ci', 'config_item (CI / App)'),
+            ('sys_created_on', 'created_at (Created)'),
+            ('due_date', 'due_date (SLA Target)'),
+            ('closed_at', 'completed_at (Closed)')
+        ])
+        _audit_table_fields("data/synthetic/discrepancies.csv", "u_failed_data_certifications (Table 2)", [
+            ('sys_id', 'discrepancy_id (Primary Key)'),
+            ('number', 'number (Record ID)'),
+            ('u_certification_task', 'linked_task (FK to cert_task)'),
+            ('u_issue_category', 'issue_category (Category)'),
+            ('u_field', 'field_name (Discrepancy Field)'),
+            ('u_status', 'status (Resolution State)'),
+            ('sys_created_on', 'created_at (Created)')
+        ])
         return 0
 
     from src.connectors.service_now_client import ServiceNowClient
     from src.discovery.connection_diagnostics import ConnectionDiagnostics
+
+    print(f"Connecting to ServiceNow Instance: {api_cfg['base_url']}")
+    print(f"Auth Method: {api_cfg.get('auth_method', 'basic').upper()} (Username: {api_cfg.get('username') or 'N/A'})")
 
     client = ServiceNowClient(
         instance_url=api_cfg['base_url'],
@@ -99,19 +124,96 @@ def cmd_test_connection(args):
     diagnostics = ConnectionDiagnostics(client, loader.settings.get('provider', {}))
     results = diagnostics.run_diagnostics()
 
-    print(f"API Base URL: {api_cfg['base_url']}")
-    print(f"Connectivity: {'[SUCCESS]' if results['api_connectivity'] else '[FAILED]'}")
-    print(f"Authentication: {'[SUCCESS]' if results['auth_valid'] else '[FAILED]'}")
-    print(f"Table 'cert_task' Access: {'[SUCCESS]' if results['task_table_access'] else '[FAILED]'}")
-    print(f"Table 'u_failed_data_certifications' Access: {'[SUCCESS]' if results['disc_table_access'] else '[FAILED]'}")
+    print(f"\n[1/3] Connectivity Check : {'[SUCCESS]' if results['api_connectivity'] else '[FAILED]'}")
+    print(f"[2/3] Authentication Check : {'[SUCCESS]' if results['auth_valid'] else '[FAILED]'}")
 
-    if results.get('suggestions'):
-        print("\nDiagnostics Suggestions:")
-        for s in results['suggestions']:
+    if not (results['api_connectivity'] and results['auth_valid']):
+        print("\nConnection or authentication failed. Suggestions:")
+        for s in results.get('suggestions', []):
             print(f"  - {s}")
+        return 1
 
-    return 0 if (results['api_connectivity'] and results['auth_valid']) else 1
+    # Detailed Table 1 & 2 Check using configured field mappings
+    task_tbl = loader.settings.get('provider', {}).get('tables', {}).get('cert_task', 'cert_task')
+    disc_tbl = loader.settings.get('provider', {}).get('tables', {}).get('failed_data_certifications', 'u_failed_data_certifications')
+    mappings = loader.get_field_mapping().get('tables', {})
 
+    task_map = mappings.get('cert_task', {}).get('mappings', {})
+    disc_map = mappings.get('u_failed_data_certifications', {}).get('mappings', {})
+
+    # Build field pairs (api_field, business_concept)
+    task_fields = [(v, f"{k} (mapped)") for k, v in task_map.items()] if task_map else [
+        ('sys_id', 'task_id'), ('number', 'task_number'), ('state', 'status'),
+        ('assigned_to', 'assigned_to'), ('cmdb_ci', 'config_item'),
+        ('sys_created_on', 'created_at'), ('due_date', 'due_date'), ('closed_at', 'completed_at')
+    ]
+
+    disc_fields = [(v, f"{k} (mapped)") for k, v in disc_map.items()] if disc_map else [
+        ('sys_id', 'discrepancy_id'), ('number', 'number'), ('u_certification_task', 'linked_task'),
+        ('u_issue_category', 'issue_category'), ('u_field', 'field_name'),
+        ('u_status', 'status'), ('sys_created_on', 'created_at')
+    ]
+
+    print(f"\n[3/3] Table & Field Extraction Verification:")
+    print("=" * 70)
+    _verify_live_table(client, task_tbl, "Table 1 (Certification Tasks)", task_fields)
+
+    print("-" * 70)
+    _verify_live_table(client, disc_tbl, "Table 2 (Discrepancies & Failures)", disc_fields)
+
+    print("=" * 70)
+    print("API AND FIELD VERIFICATION COMPLETED.")
+    return 0
+
+def _verify_live_table(client, table_name, label, required_fields):
+    """Samples records from a live ServiceNow table and audits required fields."""
+    print(f"Auditing {label}: '{table_name}'")
+    try:
+        sample = client.extract_table(table_name=table_name, limit=1)
+        if not sample:
+            print(f"  [WARNING] Table '{table_name}' is accessible, but returned 0 records.")
+            return
+
+        rec = sample[0]
+        flat_keys = set(rec.keys())
+        total_count = client.get_record_count(table_name)
+        count_str = f"{total_count:,} records" if total_count >= 0 else "N/A"
+        print(f"  [SUCCESS] Sample record fetched successfully ({len(flat_keys)} columns found, Total in Table: {count_str}).")
+        print("  Required Field Checklist:")
+        passed_count = 0
+        for fld, desc in required_fields:
+            if fld in flat_keys:
+                passed_count += 1
+                val = rec[fld]
+                disp = val.get('display_value', val.get('value', str(val))) if isinstance(val, dict) else str(val)
+                disp_str = (disp[:25] + '...') if len(disp) > 28 else disp
+                print(f"    [PASS] {fld:<25} ({desc:<28}) -> Sample: '{disp_str}'")
+            else:
+                matched = [k for k in flat_keys if fld.lower() in k.lower() or k.lower() in fld.lower()]
+                if matched:
+                    print(f"    [INFO] {fld:<25} ({desc:<28}) -> Possible match: '{matched[0]}'")
+                else:
+                    print(f"    [WARN] {fld:<25} ({desc:<28}) -> NOT FOUND (Check custom prefix)")
+        print(f"  Field Audit Result: {passed_count}/{len(required_fields)} fields verified.")
+    except Exception as e:
+        print(f"  [FAIL] Error fetching from '{table_name}': {e}")
+
+def _audit_table_fields(file_path, label, required_fields):
+    """Audits fields in demo/offline files."""
+    if not os.path.exists(file_path):
+        from src.data_processing.synthetic_generator import generate_synthetic_data
+        generate_synthetic_data()
+    df = pd.read_csv(file_path)
+    print(f"\n{label} ({len(df)} records, {len(df.columns)} columns):")
+    for item in required_fields:
+        fld = item[0] if isinstance(item, tuple) else item
+        desc = f" ({item[1]})" if isinstance(item, tuple) else ""
+        if fld in df.columns:
+            sample_val = str(df[fld].dropna().iloc[0]) if not df[fld].dropna().empty else "None"
+            sample_str = (sample_val[:25] + '...') if len(sample_val) > 28 else sample_val
+            print(f"  [PASS] {fld:<24}{desc:<28} -> Sample: '{sample_str}'")
+        else:
+            print(f"  [WARN] {fld:<24}{desc:<28} -> NOT FOUND")
 def cmd_discover_schema(args):
     """Runs schema discovery and generates field mapping suggestions."""
     print("=" * 70)
@@ -121,7 +223,7 @@ def cmd_discover_schema(args):
     app_mode = loader.get_app_mode()
     api_cfg = loader.get_api_config()
 
-    if app_mode == 'demo' or not api_cfg.get('base_url'):
+    if not api_cfg.get('base_url'):
         print("[DEMO MODE ACTIVE] Running local schema inspection on synthetic datasets...")
         if not os.path.exists('data/synthetic/cert_tasks.csv'):
             generate_synthetic_data()
