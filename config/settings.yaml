@@ -1,0 +1,51 @@
+provider:
+  name: servicenow
+  tables:
+    cert_task: cert_task
+    failed_data_certifications: u_failed_data_certifications
+
+api:
+  pagination_size: 500
+  timeout_seconds: 30
+  max_retries: 3
+
+local_paths:
+  data: data/
+  reports: reports/
+  logs: logs/
+  snapshots: data/snapshots/
+
+timezone: UTC
+
+snapshots:
+  enabled: true
+  retention_days: 30
+
+logging:
+  level: INFO
+  format: '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+  file_rotation_mb: 10
+  backup_count: 5
+
+demo_mode:
+  enabled: true
+  default_rows: 1000
+
+calendar:
+  working_days:
+    - Monday
+    - Tuesday
+    - Wednesday
+    - Thursday
+    - Friday
+  holidays:
+    - '2026-01-01'
+    - '2026-12-25'
+
+retention:
+  raw_data_days: 90
+  processed_data_days: 180
+
+export:
+  default_format: xlsx
+  include_metadata: true

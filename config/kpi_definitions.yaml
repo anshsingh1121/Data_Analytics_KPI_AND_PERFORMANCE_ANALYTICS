@@ -1,0 +1,180 @@
+kpis:
+  kpi_1_certification_completion:
+    name: "Certification Completion %"
+    description: "Percentage of successfully certified eligible tasks compared to total eligible assigned tasks"
+    formula: "Successfully Certified Eligible Tasks / Total Eligible Assigned Tasks * 100"
+    numerator: "Distinct eligible completed tasks"
+    denominator: "Distinct eligible assigned tasks (excluding cancelled)"
+    completion_statuses: ["Closed Complete"]
+    exclude_statuses: ["Cancelled"]
+    thresholds:
+      target: 95.0
+      warning: 90.0
+      critical: 85.0
+    desired_trend: "higher"
+    unit: "%"
+
+  kpi_2_daily_closure_rate:
+    name: "Daily Closure Rate"
+    description: "Average number of tasks completed per working day elapsed"
+    formula: "Tasks Completed During Period / Working Days Elapsed"
+    numerator: "Tasks completed during period"
+    denominator: "Working days elapsed in cycle"
+    completion_statuses: ["Closed Complete"]
+    thresholds:
+      target: 300.0
+      warning: 250.0
+      critical: 200.0
+    desired_trend: "higher"
+    unit: "tasks/day"
+
+  kpi_3_on_time_completion:
+    name: "On-Time Completion %"
+    description: "Percentage of completed eligible tasks finished on or before their due date"
+    formula: "Tasks Completed On or Before Due Date / Completed Eligible Tasks With Valid Due Dates * 100"
+    numerator: "Completed tasks where closed_at <= due_date"
+    denominator: "Completed tasks with valid non-null due dates"
+    completion_statuses: ["Closed Complete"]
+    thresholds:
+      target: 95.0
+      warning: 90.0
+      critical: 85.0
+    desired_trend: "higher"
+    unit: "%"
+
+  kpi_4_avg_completion_time:
+    name: "Average Completion Time"
+    description: "Average calendar or business days from creation to completion"
+    formula: "Average(Completion Timestamp - Creation Timestamp)"
+    numerator: "Total elapsed duration (days)"
+    denominator: "Completed tasks with valid creation and completion timestamps"
+    completion_statuses: ["Closed Complete"]
+    thresholds:
+      target: 6.0
+      warning: 8.0
+      critical: 10.0
+    desired_trend: "lower"
+    unit: "days"
+
+  kpi_5_discrepancy_rate:
+    name: "Discrepancy Rate"
+    description: "Percentage of certified records with at least one valid linked discrepancy"
+    formula: "Certified Records With At Least One Valid Linked Discrepancy / Certified Records in Scope * 100"
+    numerator: "Distinct certified records with at least one valid linked discrepancy"
+    denominator: "Certified records in scope"
+    thresholds:
+      target: 8.0
+      warning: 12.0
+      critical: 15.0
+    desired_trend: "lower"
+    unit: "%"
+
+  kpi_6_data_accuracy:
+    name: "Data Accuracy / Pass Rate"
+    description: "Percentage of certified records passing defined validation without discrepancy"
+    formula: "Certified Records Passing Defined Validation Without Discrepancy / Certified Records Evaluated * 100"
+    numerator: "Certified records passing validation without discrepancy"
+    denominator: "Certified records evaluated"
+    thresholds:
+      target: 92.0
+      warning: 88.0
+      critical: 85.0
+    desired_trend: "higher"
+    unit: "%"
+
+  kpi_7_rejection_rate:
+    name: "Rejection / Rework Rate"
+    description: "Percentage of eligible tasks returned for rework"
+    formula: "Eligible Tasks Returned for Rework / Eligible Tasks Submitted for Review * 100"
+    numerator: "Tasks returned for rework or rework count > 0"
+    denominator: "Eligible tasks submitted for review"
+    rework_statuses: ["Returned for Rework", "Rework"]
+    thresholds:
+      target: 3.0
+      warning: 6.0
+      critical: 10.0
+    desired_trend: "lower"
+    unit: "%"
+
+  kpi_8_backlog_aging:
+    name: "Aging / Backlog"
+    description: "Age distribution and average age of tasks currently open"
+    formula: "Task Age = As-of Timestamp - Task Creation Timestamp"
+    aging_buckets:
+      - name: "0-4 days"
+        min: 0
+        max: 4
+      - name: "5-9 days"
+        min: 5
+        max: 9
+      - name: "10-14 days"
+        min: 10
+        max: 14
+      - name: "15+ days"
+        min: 15
+        max: 9999
+    open_statuses: ["Open", "Work in Progress", "Pending Review"]
+    thresholds:
+      target: 5.0
+      warning: 10.0
+      critical: 15.0
+    desired_trend: "lower"
+    unit: "days"
+
+  kpi_9_productivity:
+    name: "Productivity per Certifier"
+    description: "Average eligible tasks completed per certifier per applicable working day"
+    formula: "Eligible Tasks Completed by Certifier / Applicable Working Days"
+    completion_statuses: ["Closed Complete"]
+    thresholds:
+      target: 12.0
+      warning: 8.0
+      critical: 5.0
+    desired_trend: "higher"
+    unit: "tasks/certifier/day"
+
+  kpi_10_last_minute_closure:
+    name: "Last-Minute Closure %"
+    description: "A: Near-deadline closure share; B: Near-deadline open backlog"
+    formula: "Completed Within Final N Days / Completed Tasks With Due Dates * 100"
+    warning_window_days: 5
+    completion_statuses: ["Closed Complete"]
+    open_statuses: ["Open", "Work in Progress", "Pending Review"]
+    thresholds:
+      target: 10.0
+      warning: 20.0
+      critical: 30.0
+    desired_trend: "lower"
+    unit: "%"
+
+  kpi_11_exception_resolution:
+    name: "Exception Resolution Time"
+    description: "Average and median time to resolve valid discrepancies"
+    formula: "Resolution Timestamp - Exception Creation Timestamp"
+    resolved_statuses: ["Resolved", "Closed"]
+    thresholds:
+      target: 5.0
+      warning: 8.0
+      critical: 12.0
+    desired_trend: "lower"
+    unit: "days"
+
+  kpi_12_sla_achievement:
+    name: "Final SLA Achievement"
+    description: "Percentage of eligible tasks completed on or before final cycle deadline"
+    formula: "Eligible Tasks Completed On or Before Final Cycle Deadline / Total Eligible Tasks Assigned to Cycle * 100"
+    completion_statuses: ["Closed Complete"]
+    exclude_statuses: ["Cancelled"]
+    thresholds:
+      target: 95.0
+      warning: 90.0
+      critical: 85.0
+    desired_trend: "higher"
+    unit: "%"
+
+general_settings:
+  working_day_calculation: true
+  open_statuses: ["Open", "Work in Progress", "Pending Review"]
+  completed_statuses: ["Closed Complete", "Closed Incomplete"]
+  cancelled_statuses: ["Cancelled"]
+  rework_statuses: ["Returned for Rework", "Rework"]

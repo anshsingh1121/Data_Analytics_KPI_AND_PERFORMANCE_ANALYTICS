@@ -1,0 +1,38 @@
+tables:
+  cert_task:
+    mappings:
+      task_id: sys_id
+      task_number: number
+      status: state
+      assigned_to: assigned_to
+      created_at: sys_created_on
+      completed_at: closed_at
+      due_date: due_date
+      application: u_application
+      config_item: cmdb_ci
+      certification_cycle: u_certification_activity
+      description: short_description
+      priority: priority
+      assignment_group: assignment_group
+    metadata:
+      mapping_status: confirmed
+      last_updated: '2026-10-10'
+      confidence_notes: Standard ServiceNow certification task schema.
+
+  u_failed_data_certifications:
+    mappings:
+      discrepancy_id: sys_id
+      linked_task: u_certification_task
+      application: u_application
+      field_name: u_field
+      config_item: u_cmdb_ci
+      issue_category: u_issue_category
+      created_at: sys_created_on
+      resolved_at: u_resolved_on
+      status: u_status
+      resolution_notes: u_resolution_notes
+      issue_description: u_issue_description
+    metadata:
+      mapping_status: discovered
+      last_updated: '2026-10-10'
+      confidence_notes: Discovered custom table based on requirements.

@@ -1,0 +1,43 @@
+# Environment & Secrets (NEVER COMMIT)
+.env
+.env.local
+.env.*.local
+*.env
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+
+# Local Data, Snapshots, & Generated Artifacts
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/snapshots/*
+!data/snapshots/.gitkeep
+data/synthetic/*
+!data/synthetic/.gitkeep
+
+# Generated Reports & Logs
+reports/*
+!reports/.gitkeep
+logs/*
+!logs/.gitkeep
+
+# IDE & Editor Configurations
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
