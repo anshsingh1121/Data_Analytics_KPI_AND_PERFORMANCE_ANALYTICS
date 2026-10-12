@@ -3,6 +3,10 @@
 .env.local
 .env.*.local
 *.env
+*.pem
+*.crt
+*.cer
+data/*.pem
 
 # Python Bytecode & Cache
 __pycache__/

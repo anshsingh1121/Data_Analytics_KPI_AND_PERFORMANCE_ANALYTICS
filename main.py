@@ -70,6 +70,21 @@ def cmd_validate_config(args):
         print("\n[FAIL] Configuration validation failed. Please check errors above.")
         return 1
 
+def get_service_now_client(loader: ConfigLoader):
+    """Initializes ServiceNowClient using validated loader configuration."""
+    from src.connectors.service_now_client import ServiceNowClient
+    api_cfg = loader.get_api_config()
+    return ServiceNowClient(
+        instance_url=api_cfg['base_url'],
+        username=api_cfg['username'],
+        password=api_cfg['password'],
+        timeout=api_cfg['timeout_seconds'],
+        retries=api_cfg['max_retries'],
+        verify_tls=api_cfg['verify_tls'],
+        ca_bundle=api_cfg.get('ca_bundle'),
+        proxies=api_cfg.get('proxies')
+    )
+
 def cmd_test_connection(args):
     """Tests connectivity, authentication, table read access, and required fields for both tables."""
     print("=" * 70)
@@ -107,30 +122,38 @@ def cmd_test_connection(args):
         ])
         return 0
 
-    from src.connectors.service_now_client import ServiceNowClient
     from src.discovery.connection_diagnostics import ConnectionDiagnostics
 
-    print(f"Connecting to ServiceNow Instance: {api_cfg['base_url']}")
-    print(f"Auth Method: {api_cfg.get('auth_method', 'basic').upper()} (Username: {api_cfg.get('username') or 'N/A'})")
+    client = get_service_now_client(loader)
 
-    client = ServiceNowClient(
-        instance_url=api_cfg['base_url'],
-        username=api_cfg['username'],
-        password=api_cfg['password'],
-        timeout=api_cfg['timeout_seconds'],
-        retries=api_cfg['max_retries'],
-        verify_tls=api_cfg['verify_tls']
-    )
+    print(f"Connecting to ServiceNow Instance: {client.instance_url} (raw: {api_cfg['base_url']})")
+    print(f"Auth Method: {api_cfg.get('auth_method', 'basic').upper()} (Username: {api_cfg.get('username') or 'N/A'})")
+    print(f"SSL/TLS Security: {client.ssl_mode}")
+    if api_cfg.get('proxies'):
+        print(f"Corporate Proxy: {api_cfg['proxies']}")
+
     diagnostics = ConnectionDiagnostics(client, loader.settings.get('provider', {}))
     results = diagnostics.run_diagnostics()
 
     print(f"\n[1/3] Connectivity Check : {'[SUCCESS]' if results['api_connectivity'] else '[FAILED]'}")
     print(f"[2/3] Authentication Check : {'[SUCCESS]' if results['auth_valid'] else '[FAILED]'}")
+    if not results.get('ssl_valid', True):
+        print(f"[!] SSL/TLS Certificate : [FAILED - Certificate Verification Issue]")
 
     if not (results['api_connectivity'] and results['auth_valid']):
-        print("\nConnection or authentication failed. Suggestions:")
+        print("\n" + "=" * 70)
+        print("CONNECTION DIAGNOSTIC & RESOLUTION GUIDE")
+        print("=" * 70)
         for s in results.get('suggestions', []):
-            print(f"  - {s}")
+            print(f"  * {s}")
+        if results.get('ssl_diagnostic'):
+            diag = results['ssl_diagnostic']
+            print(f"\nRoot Cause Detected: {diag['category']}")
+            print(f"Explanation: {diag['description']}")
+            print("\nRecommended Fixes:")
+            for step in diag.get('actionable_steps', []):
+                print(f"  -> {step}")
+        print("=" * 70)
         return 1
 
     # Detailed Table 1 & 2 Check using configured field mappings
@@ -195,6 +218,12 @@ def _verify_live_table(client, table_name, label, required_fields):
                 else:
                     print(f"    [WARN] {fld:<25} ({desc:<28}) -> NOT FOUND (Check custom prefix)")
         print(f"  Field Audit Result: {passed_count}/{len(required_fields)} fields verified.")
+    except requests.exceptions.SSLError as ssl_err:
+        from src.connectors.ssl_helper import diagnose_ssl_error
+        diag = diagnose_ssl_error(ssl_err, getattr(client, 'base_url', ''))
+        print(f"  [FAIL] SSL Verification Error on table '{table_name}': {diag['category']}")
+        for step in diag.get('actionable_steps', []):
+            print(f"         {step}")
     except Exception as e:
         print(f"  [FAIL] Error fetching from '{table_name}': {e}")
 
@@ -238,16 +267,9 @@ def cmd_discover_schema(args):
         print("\nField mapping configuration is verified and in sync with config/field_mapping.yaml.")
         return 0
 
-    from src.connectors.service_now_client import ServiceNowClient
     from src.discovery.schema_discovery import SchemaDiscovery
 
-    client = ServiceNowClient(
-        instance_url=api_cfg['base_url'],
-        username=api_cfg['username'],
-        password=api_cfg['password'],
-        timeout=api_cfg['timeout_seconds'],
-        verify_tls=api_cfg['verify_tls']
-    )
+    client = get_service_now_client(loader)
     discovery = SchemaDiscovery(client, loader.settings.get('provider', {}))
     report = discovery.generate_report()
     print("Live schema discovery report generated:")
@@ -295,17 +317,10 @@ def cmd_pipeline(args):
                 run_hist.end_run(run_id, "FAILED", errors="Missing live API credentials")
                 return 1
 
-            from src.connectors.service_now_client import ServiceNowClient
             from src.extraction.task_extractor import TaskExtractor
             from src.extraction.discrepancy_extractor import DiscrepancyExtractor
 
-            client = ServiceNowClient(
-                instance_url=api_cfg['base_url'],
-                username=api_cfg['username'],
-                password=api_cfg['password'],
-                timeout=api_cfg['timeout_seconds'],
-                verify_tls=api_cfg['verify_tls']
-            )
+            client = get_service_now_client(loader)
             field_map = loader.get_field_mapping()
             t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
             d_ext = DiscrepancyExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('u_failed_data_certifications', {}).get('mappings', {}))

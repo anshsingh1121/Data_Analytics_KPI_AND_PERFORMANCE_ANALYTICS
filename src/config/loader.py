@@ -41,20 +41,33 @@ class ConfigLoader:
         api_config = self.settings.get("api", {})
         provider = self.settings.get("provider", {})
         
+        raw_base_url = os.getenv("API_BASE_URL", "").strip().strip('"').strip("'")
+        verify_tls_str = str(os.getenv("API_VERIFY_TLS", "true")).strip().lower()
+        verify_tls = verify_tls_str not in ("false", "0", "no", "off")
+        ca_bundle = os.getenv("API_CA_BUNDLE", "").strip() or None
+
+        proxies = {}
+        if os.getenv("HTTP_PROXY"):
+            proxies["http"] = os.getenv("HTTP_PROXY").strip()
+        if os.getenv("HTTPS_PROXY"):
+            proxies["https"] = os.getenv("HTTPS_PROXY").strip()
+
         return {
-            "base_url": os.getenv("API_BASE_URL", ""),
+            "base_url": raw_base_url,
             "provider": os.getenv("API_PROVIDER", provider.get("name", "servicenow")),
             "auth_method": os.getenv("API_AUTH_METHOD", "basic"),
-            "username": os.getenv("API_USERNAME", ""),
-            "password": os.getenv("API_PASSWORD", ""),
-            "client_id": os.getenv("API_CLIENT_ID", ""),
-            "client_secret": os.getenv("API_CLIENT_SECRET", ""),
-            "token_url": os.getenv("API_TOKEN_URL", ""),
-            "access_token": os.getenv("API_ACCESS_TOKEN", ""),
+            "username": os.getenv("API_USERNAME", "").strip(),
+            "password": os.getenv("API_PASSWORD", "").strip(),
+            "client_id": os.getenv("API_CLIENT_ID", "").strip(),
+            "client_secret": os.getenv("API_CLIENT_SECRET", "").strip(),
+            "token_url": os.getenv("API_TOKEN_URL", "").strip(),
+            "access_token": os.getenv("API_ACCESS_TOKEN", "").strip(),
             "timeout_seconds": int(os.getenv("API_TIMEOUT_SECONDS", api_config.get("timeout_seconds", 30))),
             "page_size": int(os.getenv("API_PAGE_SIZE", api_config.get("pagination_size", 500))),
             "max_retries": int(os.getenv("API_MAX_RETRIES", api_config.get("max_retries", 3))),
-            "verify_tls": str(os.getenv("API_VERIFY_TLS", "true")).lower() == "true",
+            "verify_tls": verify_tls,
+            "ca_bundle": ca_bundle,
+            "proxies": proxies if proxies else None,
         }
         
     def get_field_mapping(self) -> dict:
