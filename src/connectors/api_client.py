@@ -43,7 +43,11 @@ class ApiClient(BaseClient):
             
             response = self.get(endpoint, params=params)
             records = response.get(result_key, [])
-            
+            if isinstance(records, dict):
+                records = [records]
+            elif not isinstance(records, list):
+                records = []
+                
             if not records:
                 break
                 

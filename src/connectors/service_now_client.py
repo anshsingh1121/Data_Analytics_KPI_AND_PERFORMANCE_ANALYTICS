@@ -76,7 +76,7 @@ class ServiceNowClient(ApiClient):
         return response
 
     def extract_table(self, table_name: str, query: Optional[str] = None, fields: Optional[List[str]] = None, display_value: str = "all", limit: int = 1000) -> List[Dict[str, Any]]:
-        """Extracts records from a ServiceNow table."""
+        """Extracts records from a ServiceNow table with automatic dictionary flattening."""
         endpoint = f"table/{table_name}"
         params = {
             "sysparm_display_value": display_value,
@@ -87,7 +87,25 @@ class ServiceNowClient(ApiClient):
         if fields:
             params["sysparm_fields"] = ",".join(fields)
             
-        return self.get_paginated(endpoint, params=params, limit_param="sysparm_limit", offset_param="sysparm_offset")
+        raw_records = self.get_paginated(endpoint, params=params, limit_param="sysparm_limit", offset_param="sysparm_offset")
+        if display_value == "all":
+            return [self._flatten_record(r) for r in raw_records]
+        return raw_records
+
+    def _flatten_record(self, rec: Dict[str, Any]) -> Dict[str, Any]:
+        """Flattens a ServiceNow display_value='all' record to scalar values."""
+        flat = {}
+        for k, v in rec.items():
+            if isinstance(v, dict):
+                # For primary keys and foreign keys, retain raw value
+                if k in ('sys_id', 'u_certification_task') or k.endswith('_sys_id'):
+                    flat[k] = v.get('value', v.get('display_value', ''))
+                else:
+                    disp = v.get('display_value')
+                    flat[k] = disp if (disp is not None and disp != '') else v.get('value')
+            else:
+                flat[k] = v
+        return flat
 
     def get_record_count(self, table_name: str, query: Optional[str] = None) -> int:
         """Gets record count using stats API."""
