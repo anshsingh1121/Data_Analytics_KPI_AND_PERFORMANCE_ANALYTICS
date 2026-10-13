@@ -192,7 +192,7 @@ def _verify_live_table(client, table_name, label, required_fields):
     """Samples records from a live ServiceNow table and audits required fields."""
     print(f"Auditing {label}: '{table_name}'")
     try:
-        sample = client.extract_table(table_name=table_name, limit=1)
+        sample = client.extract_table(table_name=table_name, limit=1, max_records=1)
         if not sample:
             print(f"  [WARNING] Table '{table_name}' is accessible, but returned 0 records.")
             return

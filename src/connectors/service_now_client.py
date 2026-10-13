@@ -75,7 +75,7 @@ class ServiceNowClient(ApiClient):
         response = self.get_paginated(endpoint, params=params, limit_param="sysparm_limit", offset_param="sysparm_offset")
         return response
 
-    def extract_table(self, table_name: str, query: Optional[str] = None, fields: Optional[List[str]] = None, display_value: str = "all", limit: int = 1000) -> List[Dict[str, Any]]:
+    def extract_table(self, table_name: str, query: Optional[str] = None, fields: Optional[List[str]] = None, display_value: str = "all", limit: int = 1000, max_records: Optional[int] = None) -> List[Dict[str, Any]]:
         """Extracts records from a ServiceNow table with automatic dictionary flattening."""
         endpoint = f"table/{table_name}"
         params = {
@@ -87,7 +87,7 @@ class ServiceNowClient(ApiClient):
         if fields:
             params["sysparm_fields"] = ",".join(fields)
             
-        raw_records = self.get_paginated(endpoint, params=params, limit_param="sysparm_limit", offset_param="sysparm_offset")
+        raw_records = self.get_paginated(endpoint, params=params, limit_param="sysparm_limit", offset_param="sysparm_offset", max_records=max_records)
         if display_value == "all":
             return [self._flatten_record(r) for r in raw_records]
         return raw_records
