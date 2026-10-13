@@ -357,45 +357,120 @@ def cmd_pipeline(args):
 
         # Step 5: Save Processed Outputs
         os.makedirs('data/processed', exist_ok=True)
+        # Step 5: Cycle Assignment & Save Processed Outputs
+        cycle_cfg = loader.get_cycle_config()
+        cycle_mgr = CycleManager(cycle_cfg)
+        
+        # Assign certification cycle based on creation timestamps
+        tasks_resolved = cycle_mgr.assign_cycle_to_dataframe(tasks_resolved)
+        task_cycle_map = dict(zip(tasks_resolved['sys_id'], tasks_resolved['certification_cycle']))
+        disc_resolved['certification_cycle'] = disc_resolved['u_certification_task'].map(task_cycle_map).fillna('Other')
+
+        os.makedirs('data/processed', exist_ok=True)
         tasks_resolved.to_csv('data/processed/cert_tasks_processed.csv', index=False)
         disc_resolved.to_csv('data/processed/discrepancies_processed.csv', index=False)
         logger.info("Saved processed data to data/processed/")
 
-        # Step 6: KPI Engine Execution
-        cycle_cfg = loader.get_cycle_config()
-        cycle_mgr = CycleManager(cycle_cfg)
-        curr_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.current_cycle)
-        prev_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.previous_cycle)
+        # Step 6: Multi-Quarter KPI Engine Execution
+        # Specified quarters: Jan-Mar and Oct-Dec for 2026 and 2025
+        target_quarters = ['Q1-2025', 'Q4-2025', 'Q1-2026', 'Q4-2026']
+        quarter_labels = {
+            'Q1-2025': 'Jan-Mar 2025',
+            'Q4-2025': 'Oct-Dec 2025',
+            'Q1-2026': 'Jan-Mar 2026',
+            'Q4-2026': 'Oct-Dec 2026'
+        }
 
+        print("\n" + "=" * 70)
+        print("QUARTER BREAKDOWN (Jan-Mar & Oct-Dec of 2025 & 2026)")
+        print("=" * 70)
+        quarterly_results = {}
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
 
-        # Separate cycles for calculation
-        curr_cycle_name = cycle_mgr.current_cycle.get('name', 'Q4-2026')
-        prev_cycle_name = cycle_mgr.previous_cycle.get('name', 'Q3-2026')
+        for q_name in target_quarters:
+            q_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(q_name))
+            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'] == q_name]
+            q_disc = disc_resolved[disc_resolved['certification_cycle'] == q_name]
+            
+            w_days = q_meta.get('total_working_days', 60)
+            if q_meta.get('is_active') and q_meta.get('elapsed_working_days'):
+                w_days = q_meta['elapsed_working_days']
 
-        cycle_col = 'u_certification_activity' if 'u_certification_activity' in tasks_resolved.columns else 'u_certification_cycle'
-        curr_tasks = tasks_resolved[tasks_resolved[cycle_col] == curr_cycle_name] if cycle_col in tasks_resolved.columns else tasks_resolved
-        prev_tasks = tasks_resolved[tasks_resolved[cycle_col] == prev_cycle_name] if cycle_col in tasks_resolved.columns else tasks_resolved
+            q_kpis = kpi_engine.calculate_all_kpis(
+                q_tasks, q_disc,
+                working_days=max(1, w_days),
+                as_of_date=q_meta.get('end_date'),
+                final_deadline=q_meta.get('final_deadline')
+            )
+            quarterly_results[q_name] = {
+                'meta': q_meta,
+                'tasks': q_tasks,
+                'disc': q_disc,
+                'kpis': q_kpis
+            }
+            lbl = quarter_labels.get(q_name, q_name)
+            print(f"  {q_name} ({lbl:<12}) : {len(q_tasks):>6} tasks, {len(q_disc):>4} discrepancies")
 
-        curr_disc = disc_resolved[disc_resolved['u_certification_task'].isin(curr_tasks['sys_id'])]
-        prev_disc = disc_resolved[disc_resolved['u_certification_task'].isin(prev_tasks['sys_id'])]
+        # Determine active cycle for headline reports
+        curr_tasks = quarterly_results['Q4-2026']['tasks']
+        curr_disc = quarterly_results['Q4-2026']['disc']
+        curr_kpis = quarterly_results['Q4-2026']['kpis']
+        curr_meta = quarterly_results['Q4-2026']['meta']
+        curr_cycle_name = 'Q4-2026'
 
-        curr_kpis = kpi_engine.calculate_all_kpis(
-            curr_tasks, curr_disc,
-            working_days=curr_meta['elapsed_working_days'],
-            as_of_date='2026-10-23',
-            final_deadline=curr_meta['final_deadline']
-        )
+        # If Q4-2026 has no tasks, select the quarter with the most records, or all tasks
+        if curr_tasks.empty:
+            counts = {q: len(quarterly_results[q]['tasks']) for q in target_quarters}
+            best_q = max(counts, key=counts.get)
+            if counts[best_q] > 0:
+                curr_tasks = quarterly_results[best_q]['tasks']
+                curr_disc = quarterly_results[best_q]['disc']
+                curr_kpis = quarterly_results[best_q]['kpis']
+                curr_meta = quarterly_results[best_q]['meta']
+                curr_cycle_name = best_q
+            else:
+                curr_tasks = tasks_resolved
+                curr_disc = disc_resolved
+                curr_kpis = kpi_engine.calculate_all_kpis(curr_tasks, curr_disc, working_days=curr_meta.get('elapsed_working_days', 15))
 
-        prev_kpis = kpi_engine.calculate_all_kpis(
-            prev_tasks, prev_disc,
-            working_days=prev_meta['total_working_days'],
-            as_of_date='2026-09-30',
-            final_deadline=prev_meta['final_deadline']
-        )
+        # Prior cycle for comparison (sequential Q1-2026)
+        prev_kpis = quarterly_results['Q1-2026']['kpis']
 
-        # Step 7: Cycle Comparisons
+        # Step 7: Cycle Comparisons & Multi-Quarter Consolidated Matrix
         comp_rows = cycle_mgr.compare_metrics(curr_kpis, prev_kpis, mode="like_for_like")
+
+        kpi_keys = [
+            ('kpi_1_certification_completion', 'Certification Completion %', '%'),
+            ('kpi_2_daily_closure_rate', 'Daily Closure Rate', 'tasks/day'),
+            ('kpi_3_on_time_completion', 'On-Time Completion %', '%'),
+            ('kpi_4_avg_completion_time', 'Average Completion Time', 'days'),
+            ('kpi_5_discrepancy_rate', 'Discrepancy Rate', '%'),
+            ('kpi_6_data_accuracy', 'Data Accuracy / Pass Rate', '%'),
+            ('kpi_7_rework_rate', 'Rejection / Rework Rate', '%'),
+            ('kpi_8_backlog_aging', 'Backlog Aging', 'days'),
+            ('kpi_9_productivity', 'Certifier Productivity', 'tasks/day'),
+            ('kpi_10_last_minute_closure', 'Last-Minute Closure %', '%'),
+            ('kpi_11_exception_resolution', 'Exception Resolution Time', 'days'),
+            ('kpi_12_sla_achievement', 'Final SLA Achievement %', '%')
+        ]
+
+        multi_q_rows = []
+        for k_key, k_label, k_unit in kpi_keys:
+            row_dict = {"Metric Name": k_label, "Unit": k_unit}
+            for q_name in target_quarters:
+                val = quarterly_results[q_name]['kpis'].get(k_key, {}).get('value')
+                row_dict[f"{q_name} ({quarter_labels[q_name]})"] = f"{val}{k_unit}" if val is not None else "N/A"
+            
+            # YoY Change: Q4-2026 vs Q4-2025
+            val_26 = quarterly_results['Q4-2026']['kpis'].get(k_key, {}).get('value')
+            val_25 = quarterly_results['Q4-2025']['kpis'].get(k_key, {}).get('value')
+            if val_26 is not None and val_25 is not None:
+                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = round(val_26 - val_25, 2)
+            else:
+                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = "N/A"
+            multi_q_rows.append(row_dict)
+
+        multi_q_df = pd.DataFrame(multi_q_rows)
 
         # Step 8: Reports & Exports
         rep_gen = ReportGenerator(curr_meta, app_mode=mode)
@@ -407,13 +482,14 @@ def cmd_pipeline(args):
         daily_df = rep_gen.build_daily_trends_df(curr_tasks)
         backlog_df = rep_gen.build_backlog_analysis_df(curr_tasks)
         disc_df = rep_gen.build_discrepancy_analysis_df(curr_disc)
-        prod_df = rep_gen.build_certifier_productivity_df(curr_tasks, curr_meta['elapsed_working_days'])
+        prod_df = rep_gen.build_certifier_productivity_df(curr_tasks, curr_meta.get('elapsed_working_days', 15))
         exc_df = rep_gen.build_exception_resolution_df(curr_disc)
         qa_df = rep_gen.build_data_quality_report_df(tasks_resolved, disc_resolved, rel_stats)
 
         # Export CSVs
         csv_files = csv_exp.export_all({
             "kpi_summary": kpi_sum_df,
+            "multi_quarter_comparison": multi_q_df,
             "cycle_comparison": comp_df,
             "daily_trends": daily_df,
             "backlog_analysis": backlog_df,
@@ -425,6 +501,7 @@ def cmd_pipeline(args):
 
         # Export consolidated Excel
         excel_path = excel_exp.export({
+            "4-Quarter Comparison": multi_q_df,
             "Management Summary": kpi_sum_df,
             "Cycle Comparison": comp_df,
             "Daily Trends": daily_df,
@@ -444,11 +521,16 @@ def cmd_pipeline(args):
 
         # Print Executive Summary
         print("\n" + "=" * 70)
-        print("PIPELINE COMPLETED SUCCESSFULLY — EXECUTIVE KPI SUMMARY")
+        print(f"PIPELINE COMPLETED SUCCESSFULLY — {curr_cycle_name} KPI SUMMARY")
         print("=" * 70)
         for _, row in kpi_sum_df.iterrows():
             val = f"{row['Value']}{row['Unit']}" if row['Value'] is not None else "N/A"
             print(f"  {row['KPI Name']:<32} : {val:>10}  (Eligible: {row['Denominator']})")
+
+        print("\n" + "=" * 70)
+        print("4-QUARTER COMPARISON SUMMARY")
+        print("=" * 70)
+        print(multi_q_df.to_string(index=False))
 
         print("\nKey Deliverables:")
         print(f"  - Excel Report: {excel_path}")

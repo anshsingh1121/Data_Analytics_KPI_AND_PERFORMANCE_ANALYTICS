@@ -1,13 +1,72 @@
+# ==============================================================================
+# CERTIFICATION CYCLES CONFIGURATION
+# Defined quarters: Jan-Mar (Q1) and Oct-Dec (Q4) for 2026 and 2025
+# ==============================================================================
+
+cycles:
+  Q4-2026:
+    name: "Q4-2026"
+    quarter_label: "Oct-Dec 2026"
+    year: 2026
+    quarter: 4
+    start_date: "2026-10-01"
+    end_date: "2026-12-31"
+    final_deadline: "2026-12-23"
+
+  Q1-2026:
+    name: "Q1-2026"
+    quarter_label: "Jan-Mar 2026"
+    year: 2026
+    quarter: 1
+    start_date: "2026-01-01"
+    end_date: "2026-03-31"
+    final_deadline: "2026-03-24"
+
+  Q4-2025:
+    name: "Q4-2025"
+    quarter_label: "Oct-Dec 2025"
+    year: 2025
+    quarter: 4
+    start_date: "2025-10-01"
+    end_date: "2025-12-31"
+    final_deadline: "2025-12-23"
+
+  Q1-2025:
+    name: "Q1-2025"
+    quarter_label: "Jan-Mar 2025"
+    year: 2025
+    quarter: 1
+    start_date: "2025-01-01"
+    end_date: "2025-03-31"
+    final_deadline: "2025-03-25"
+
 current_cycle:
-  name: Q4-2026
-  start_date: 2026-10-01
-  end_date: 2026-12-31
-  final_deadline: 2026-12-23
+  name: "Q4-2026"
+  quarter_label: "Oct-Dec 2026"
+  year: 2026
+  quarter: 4
+  start_date: "2026-10-01"
+  end_date: "2026-12-31"
+  final_deadline: "2026-12-23"
+
 previous_cycle:
-  name: Q3-2026
-  start_date: 2026-07-01
-  end_date: 2026-09-30
-  final_deadline: 2026-09-23
+  name: "Q1-2026"
+  quarter_label: "Jan-Mar 2026"
+  year: 2026
+  quarter: 1
+  start_date: "2026-01-01"
+  end_date: "2026-03-31"
+  final_deadline: "2026-03-24"
+
+yoy_cycle:
+  name: "Q4-2025"
+  quarter_label: "Oct-Dec 2025"
+  year: 2025
+  quarter: 4
+  start_date: "2025-10-01"
+  end_date: "2025-12-31"
+  final_deadline: "2025-12-23"
+
 comparison_settings:
   mode: like_for_like
   align_by: working_days_elapsed

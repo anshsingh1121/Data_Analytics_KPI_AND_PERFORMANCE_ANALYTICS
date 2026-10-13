@@ -168,13 +168,19 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
-        state_col = self._col(tasks_df, ['state', 'status']) or 'state'
-        closed_col = self._col(tasks_df, ['closed_at', 'completed_at']) or 'closed_at'
-        due_col = self._col(tasks_df, ['due_date']) or 'due_date'
+        state_col = self._col(tasks_df, ['state', 'status'])
+        closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
+        due_col = self._col(tasks_df, ['due_date', 'u_due_date'])
+
+        if not state_col or state_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Task state column missing"])
 
         completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
         if completed.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["No completed tasks"])
+
+        if not due_col or not closed_col or due_col not in tasks_df.columns or closed_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, len(completed), unit, desired_trend, False, warnings=["Due date or closed date column missing"])
 
         valid = completed.dropna(subset=[due_col, closed_col]).copy()
         excluded_count = len(completed) - len(valid)
@@ -218,11 +224,17 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
-        state_col = self._col(tasks_df, ['state', 'status']) or 'state'
-        created_col = self._col(tasks_df, ['sys_created_on', 'created_at']) or 'sys_created_on'
-        closed_col = self._col(tasks_df, ['closed_at', 'completed_at']) or 'closed_at'
+        state_col = self._col(tasks_df, ['state', 'status'])
+        created_col = self._col(tasks_df, ['sys_created_on', 'created_at'])
+        closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
+
+        if not state_col or state_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Task state column missing"])
 
         completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
+        if not created_col or not closed_col or created_col not in tasks_df.columns or closed_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, len(completed), unit, desired_trend, False, warnings=["Creation or closed date column missing"])
+
         valid = completed.dropna(subset=[created_col, closed_col]).copy()
         excluded_count = len(completed) - len(valid)
 
@@ -498,11 +510,17 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
-        state_col = self._col(tasks_df, ['state', 'status']) or 'state'
-        closed_col = self._col(tasks_df, ['closed_at', 'completed_at']) or 'closed_at'
-        due_col = self._col(tasks_df, ['due_date']) or 'due_date'
+        state_col = self._col(tasks_df, ['state', 'status'])
+        closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
+        due_col = self._col(tasks_df, ['due_date', 'u_due_date'])
+
+        if not state_col or state_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Task state column missing"])
 
         completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
+        if not due_col or not closed_col or due_col not in tasks_df.columns or closed_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, len(completed), unit, desired_trend, False, warnings=["Due date or closed date column missing"])
+
         valid = completed.dropna(subset=[due_col, closed_col]).copy()
         excluded_count = len(completed) - len(valid)
 
@@ -560,11 +578,30 @@ class KPIEngine:
         if disc_df is None or disc_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["No discrepancies in scope"])
 
-        created_col = self._col(disc_df, ['sys_created_on', 'created_at']) or 'sys_created_on'
-        resolved_col = self._col(disc_df, ['u_resolved_at', 'u_resolved_on', 'resolved_at']) or 'u_resolved_at'
-        state_col = self._col(disc_df, ['state', 'status', 'u_status']) or 'state'
+        created_col = self._col(disc_df, ['sys_created_on', 'created_at', 'opened_at'])
+        resolved_col = self._col(disc_df, ['u_resolved_at', 'u_resolved_on', 'resolved_at', 'closed_at', 'sys_updated_on'])
+        state_col = self._col(disc_df, ['state', 'status', 'u_status'])
 
-        resolved = disc_df[disc_df[state_col].isin(['Resolved', 'Closed', 'resolved'])].copy()
+        # If resolution date column is not in discrepancy table, gracefully report unavailable
+        if not resolved_col or resolved_col not in disc_df.columns:
+            return self._create_kpi_result(
+                name, None, 0, 0, len(disc_df), unit, desired_trend, False,
+                warnings=["Resolution timestamp (u_resolved_on/resolved_at) not tracked in discrepancy table"],
+                details={"unresolved_exceptions": len(disc_df), "data_note": "Resolution timestamp not tracked in source table"}
+            )
+
+        if not created_col or created_col not in disc_df.columns:
+            return self._create_kpi_result(
+                name, None, 0, 0, len(disc_df), unit, desired_trend, False,
+                warnings=["Creation timestamp not tracked in discrepancy table"],
+                details={"unresolved_exceptions": len(disc_df)}
+            )
+
+        if state_col and state_col in disc_df.columns:
+            resolved = disc_df[disc_df[state_col].isin(['Resolved', 'Closed', 'resolved'])].copy()
+        else:
+            resolved = disc_df.dropna(subset=[resolved_col]).copy()
+
         valid = resolved.dropna(subset=[created_col, resolved_col]).copy()
         excluded_count = len(disc_df) - len(valid)
 
@@ -580,6 +617,14 @@ class KPIEngine:
         valid['resolved_dt'] = self._to_dt(valid[resolved_col])
         valid = valid.dropna(subset=['created_dt', 'resolved_dt'])
         valid = valid[valid['resolved_dt'] >= valid['created_dt']]
+
+        if valid.empty:
+            unresolved_count = len(disc_df) - len(resolved)
+            return self._create_kpi_result(
+                name, None, 0, 0, excluded_count, unit, desired_trend, False,
+                warnings=["No resolved exceptions with valid non-negative duration"],
+                details={"unresolved_exceptions": unresolved_count}
+            )
 
         durations = (valid['resolved_dt'] - valid['created_dt']).dt.total_seconds() / 86400.0
 
@@ -612,9 +657,12 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
-        state_col = self._col(tasks_df, ['state', 'status']) or 'state'
-        closed_col = self._col(tasks_df, ['closed_at', 'completed_at']) or 'closed_at'
-        id_col = self._col(tasks_df, ['sys_id', 'task_id']) or 'sys_id'
+        state_col = self._col(tasks_df, ['state', 'status'])
+        closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
+        id_col = self._col(tasks_df, ['sys_id', 'task_id', 'number'])
+
+        if not state_col or state_col not in tasks_df.columns or not id_col or id_col not in tasks_df.columns:
+            return self._create_kpi_result(name, None, 0, 0, len(tasks_df), unit, desired_trend, False, warnings=["State or ID column missing"])
 
         exclude_statuses = ["Cancelled", "canceled"]
         eligible = tasks_df[~tasks_df[state_col].isin(exclude_statuses)].copy()

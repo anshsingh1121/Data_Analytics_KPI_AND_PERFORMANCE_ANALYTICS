@@ -16,22 +16,79 @@ class CycleManager:
 
     def _init_cycles(self):
         """Extracts current and previous cycle from config."""
+        self.cycles = self.config.get('cycles', {})
         self.current_cycle = self.config.get('current_cycle', {
             'name': 'Q4-2026',
+            'quarter_label': 'Oct-Dec 2026',
             'start_date': '2026-10-01',
             'end_date': '2026-12-31',
             'final_deadline': '2026-12-23'
         })
         self.previous_cycle = self.config.get('previous_cycle', {
-            'name': 'Q3-2026',
-            'start_date': '2026-07-01',
-            'end_date': '2026-09-30',
-            'final_deadline': '2026-09-23'
+            'name': 'Q1-2026',
+            'quarter_label': 'Jan-Mar 2026',
+            'start_date': '2026-01-01',
+            'end_date': '2026-03-31',
+            'final_deadline': '2026-03-24'
         })
         self.comparison_settings = self.config.get('comparison_settings', {
             'mode': 'like_for_like',
             'align_by': 'working_days_elapsed'
         })
+
+    def get_cycle_by_name(self, name: str) -> Dict[str, Any]:
+        """Returns cycle dict by name."""
+        if name in self.cycles:
+            return self.cycles[name]
+        if self.current_cycle.get('name') == name:
+            return self.current_cycle
+        if self.previous_cycle.get('name') == name:
+            return self.previous_cycle
+        return {'name': name, 'start_date': '2026-10-01', 'end_date': '2026-12-31', 'final_deadline': '2026-12-23'}
+
+    def assign_cycle_to_dataframe(self, df: pd.DataFrame, date_col: str = 'sys_created_on') -> pd.DataFrame:
+        """Assigns quarter cycle name (Q4-2026, Q1-2026, Q4-2025, Q1-2025) based on timestamp."""
+        if df is None or df.empty:
+            return df
+            
+        col_to_use = None
+        for cand in [date_col, 'sys_created_on', 'created_at', 'closed_at']:
+            if cand in df.columns:
+                col_to_use = cand
+                break
+                
+        if not col_to_use:
+            df['certification_cycle'] = 'Q4-2026'
+            return df
+            
+        dt_series = pd.to_datetime(df[col_to_use], errors='coerce')
+        if hasattr(dt_series.dt, 'tz') and dt_series.dt.tz is not None:
+            dt_series = dt_series.dt.tz_localize(None)
+
+        def _match_cycle(ts):
+            if pd.isna(ts):
+                return 'Unknown'
+            # Check configured cycle boundaries
+            for c_name, c_info in self.cycles.items():
+                s = pd.to_datetime(c_info.get('start_date'))
+                e = pd.to_datetime(c_info.get('end_date'))
+                if s <= ts <= e:
+                    return c_name
+            # Fallback by year and month
+            y = ts.year
+            m = ts.month
+            if y == 2026 and 10 <= m <= 12:
+                return 'Q4-2026'
+            elif y == 2026 and 1 <= m <= 3:
+                return 'Q1-2026'
+            elif y == 2025 and 10 <= m <= 12:
+                return 'Q4-2025'
+            elif y == 2025 and 1 <= m <= 3:
+                return 'Q1-2025'
+            return 'Other'
+
+        df['certification_cycle'] = dt_series.apply(_match_cycle)
+        return df
 
     def calculate_working_days(self, start_date: Any, end_date: Any) -> int:
         """Calculates working days elapsed between two dates respecting holidays and weekends."""

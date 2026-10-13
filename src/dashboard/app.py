@@ -156,13 +156,17 @@ with st.sidebar:
     st.markdown("### 🔍 **Global Filters**")
 
     if tasks_df is not None and not tasks_df.empty:
-        cycle_col = 'u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle'
-        available_cycles = sorted(list(tasks_df[cycle_col].dropna().unique())) if cycle_col in tasks_df.columns else ["Q4-2026"]
+        cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_df.columns else ('u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle')
+        detected = list(tasks_df[cycle_col].dropna().unique()) if cycle_col in tasks_df.columns else []
+        preferred = ['Q4-2026', 'Q1-2026', 'Q4-2025', 'Q1-2025']
+        available_cycles = [c for c in preferred if c in detected] + [c for c in detected if c not in preferred]
+        if not available_cycles:
+            available_cycles = preferred
         
         selected_cycle = st.selectbox(
             "Certification Cycle",
             available_cycles,
-            index=len(available_cycles) - 1 if available_cycles else 0
+            index=0
         )
 
         # Filter by cycle
