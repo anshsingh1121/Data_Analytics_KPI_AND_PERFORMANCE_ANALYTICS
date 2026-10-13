@@ -311,22 +311,30 @@ def cmd_pipeline(args):
             raw_disc = pd.read_csv(disc_path)
             logger.info(f"Loaded demo tasks: {len(raw_tasks)}, discrepancies: {len(raw_disc)}")
         else:
-            api_cfg = loader.get_api_config()
-            if not api_cfg.get('base_url'):
-                logger.error("Live mode selected but no API credentials configured in .env.")
-                run_hist.end_run(run_id, "FAILED", errors="Missing live API credentials")
-                return 1
+            tasks_cache = 'data/processed/cert_tasks_processed.csv'
+            disc_cache = 'data/processed/discrepancies_processed.csv'
+            if getattr(args, 'skip_fetch', False) and os.path.exists(tasks_cache) and os.path.exists(disc_cache):
+                logger.info("Using previously fetched live records from data/processed/ ...")
+                print("  [INFO] Skipping API call — using already fetched dataset from local disk.")
+                raw_tasks = pd.read_csv(tasks_cache)
+                raw_disc = pd.read_csv(disc_cache)
+            else:
+                api_cfg = loader.get_api_config()
+                if not api_cfg.get('base_url'):
+                    logger.error("Live mode selected but no API credentials configured in .env.")
+                    run_hist.end_run(run_id, "FAILED", errors="Missing live API credentials")
+                    return 1
 
-            from src.extraction.task_extractor import TaskExtractor
-            from src.extraction.discrepancy_extractor import DiscrepancyExtractor
+                from src.extraction.task_extractor import TaskExtractor
+                from src.extraction.discrepancy_extractor import DiscrepancyExtractor
 
-            client = get_service_now_client(loader)
-            field_map = loader.get_field_mapping()
-            t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
-            d_ext = DiscrepancyExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('u_failed_data_certifications', {}).get('mappings', {}))
-            
-            raw_tasks = t_ext.extract()
-            raw_disc = d_ext.extract()
+                client = get_service_now_client(loader)
+                field_map = loader.get_field_mapping()
+                t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
+                d_ext = DiscrepancyExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('u_failed_data_certifications', {}).get('mappings', {}))
+                
+                raw_tasks = t_ext.extract()
+                raw_disc = d_ext.extract()
 
         # Step 2: Normalization
         normalizer = DataNormalizer(field_mapping={}, tz_config=loader.settings.get('timezone', 'UTC'))
@@ -612,6 +620,7 @@ def main():
     
     p_pipe = subparsers.add_parser("pipeline", help="Execute complete analytical data pipeline")
     p_pipe.add_argument("--mode", choices=["demo", "live"], default="demo", help="Execution mode (demo or live)")
+    p_pipe.add_argument("--skip-fetch", "--cached", action="store_true", help="Skip API fetch and use already-saved records from data/processed/")
 
     subparsers.add_parser("compare-cycles", help="Compare current vs previous certification cycles")
     subparsers.add_parser("export", help="Generate consolidated CSV and Excel reports")
