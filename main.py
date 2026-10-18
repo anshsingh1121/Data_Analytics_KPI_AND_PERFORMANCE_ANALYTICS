@@ -363,12 +363,16 @@ def cmd_pipeline(args):
             disc_link_col='u_certification_task'
         )
 
-        # Step 5: Save Processed Outputs
-        os.makedirs('data/processed', exist_ok=True)
         # Step 5: Cycle Assignment & Save Processed Outputs
         cycle_cfg = loader.get_cycle_config()
         cycle_mgr = CycleManager(cycle_cfg)
         
+        # Deduplicate any columns from raw extraction or merges
+        if tasks_resolved.columns.duplicated().any():
+            tasks_resolved = tasks_resolved.loc[:, ~tasks_resolved.columns.duplicated()].copy()
+        if disc_resolved.columns.duplicated().any():
+            disc_resolved = disc_resolved.loc[:, ~disc_resolved.columns.duplicated()].copy()
+
         # Assign certification cycle based on creation timestamps
         tasks_resolved = cycle_mgr.assign_cycle_to_dataframe(tasks_resolved)
         task_cycle_map = dict(zip(tasks_resolved['sys_id'], tasks_resolved['certification_cycle']))
@@ -397,8 +401,8 @@ def cmd_pipeline(args):
 
         for q_name in target_quarters:
             q_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(q_name))
-            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'] == q_name]
-            q_disc = disc_resolved[disc_resolved['certification_cycle'] == q_name]
+            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'] == q_name].copy()
+            q_disc = disc_resolved[disc_resolved['certification_cycle'] == q_name].copy()
             
             w_days = q_meta.get('total_working_days', 60)
             if q_meta.get('is_active') and q_meta.get('elapsed_working_days'):
@@ -522,8 +526,10 @@ def cmd_pipeline(args):
 
         # Step 9: Save Snapshot & Run History
         snap_store = SnapshotStore("data/snapshots")
-        snap_store.save_snapshot(curr_tasks, datatype="cert_tasks", is_demo=(mode == 'demo'))
-        snap_store.save_snapshot(curr_disc, datatype="discrepancies", is_demo=(mode == 'demo'))
+        curr_tasks_snap = curr_tasks.loc[:, ~curr_tasks.columns.duplicated()].copy()
+        curr_disc_snap = curr_disc.loc[:, ~curr_disc.columns.duplicated()].copy()
+        snap_store.save_snapshot(curr_tasks_snap, datatype="cert_tasks", is_demo=(mode == 'demo'))
+        snap_store.save_snapshot(curr_disc_snap, datatype="discrepancies", is_demo=(mode == 'demo'))
 
         run_hist.end_run(run_id, "SUCCESS", tasks=len(tasks_resolved), disc=len(disc_resolved))
 

@@ -61,3 +61,40 @@ def test_deadline_monitor():
     # T3 is closed complete -> Ignored
     assert alerts['summary']['overdue'] == 1
     assert alerts['summary']['near_deadline'] == 1
+
+def test_snapshot_store_duplicate_columns(tmp_path):
+    store_dir = str(tmp_path / "snapshots_dup")
+    store = SnapshotStore(data_dir=store_dir)
+    # Construct DataFrame with duplicate column names
+    df = pd.DataFrame([[1, 2, 3]], columns=["col_a", "short_description", "short_description"])
+    assert list(df.columns) == ["col_a", "short_description", "short_description"]
+    
+    # Saving must succeed and automatically deduplicate columns
+    snap_id = store.save_snapshot(df, datatype="cert_tasks", is_demo=True)
+    assert snap_id is not None
+    loaded = store.load_snapshot(snap_id)
+    assert loaded is not None
+    assert len(loaded.columns) == 2
+    assert list(loaded.columns) == ["col_a", "short_description"]
+
+def test_report_generator_slice_no_warning():
+    import warnings
+    from src.reporting.report_generator import ReportGenerator
+    
+    rep_gen = ReportGenerator(app_mode="live")
+    full_df = pd.DataFrame({
+        "u_certification_task": ["TASK1", "TASK2"],
+        "category": ["A", "B"],
+        "status": ["Open", "Closed"],
+        "certification_cycle": ["Q4-2026", "Q1-2026"]
+    })
+    # Create a slice from DataFrame
+    sliced_df = full_df[full_df["certification_cycle"] == "Q4-2026"]
+    
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        res = rep_gen.build_discrepancy_analysis_df(sliced_df)
+        setting_with_copy = [item for item in w if issubclass(item.category, pd.errors.SettingWithCopyWarning)]
+        assert len(setting_with_copy) == 0
+        assert not res.empty
+

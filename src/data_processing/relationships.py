@@ -25,10 +25,21 @@ class RelationshipResolver:
         # Count discrepancies per task
         disc_counts = disc_df[has_valid_link].groupby(disc_link_col).size().reset_index(name='discrepancy_count')
         
+        # Clean pre-existing discrepancy_count or disc_link_col from tasks_df to prevent column collisions/suffixes
+        clean_tasks = tasks_df.copy()
+        if 'discrepancy_count' in clean_tasks.columns:
+            clean_tasks = clean_tasks.drop(columns=['discrepancy_count'])
+        if disc_link_col in clean_tasks.columns and task_id_col != disc_link_col:
+            clean_tasks = clean_tasks.drop(columns=[disc_link_col])
+
         # Merge back to tasks
-        tasks_with_counts = tasks_df.merge(disc_counts, left_on=task_id_col, right_on=disc_link_col, how='left')
+        tasks_with_counts = clean_tasks.merge(disc_counts, left_on=task_id_col, right_on=disc_link_col, how='left')
         tasks_with_counts['discrepancy_count'] = tasks_with_counts['discrepancy_count'].fillna(0).astype(int)
         
+        # Ensure no duplicate columns exist after merge
+        if tasks_with_counts.columns.duplicated().any():
+            tasks_with_counts = tasks_with_counts.loc[:, ~tasks_with_counts.columns.duplicated()].copy()
+
         tasks_without_disc = tasks_with_counts[tasks_with_counts['discrepancy_count'] == 0]
         
         stats = {

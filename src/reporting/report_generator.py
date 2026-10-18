@@ -142,6 +142,8 @@ class ReportGenerator:
         if disc_df is None or disc_df.empty:
             return pd.DataFrame(columns=["Category", "Total Discrepancies", "Resolved Count", "Open Count", "Resolution Rate %"])
 
+        disc_df = disc_df.copy()
+
         cat_col = 'u_issue_category' if 'u_issue_category' in disc_df.columns else 'category'
         state_col = None
         for cand in ['u_status', 'state', 'status']:

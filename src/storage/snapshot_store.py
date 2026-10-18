@@ -33,10 +33,23 @@ class SnapshotStore:
         """Saves a dataframe to a snapshot."""
         timestamp = datetime.now().isoformat()
         snap_id = f"{datatype}_{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        
+        # Deduplicate columns if any duplicate exists to prevent PyArrow ValueError
+        if df.columns.duplicated().any():
+            dup_cols = list(df.columns[df.columns.duplicated()])
+            logger.warning(f"Duplicate columns detected in {datatype} snapshot: {dup_cols}. Deduplicating...")
+            df = df.loc[:, ~df.columns.duplicated()].copy()
+
         filename = f"{snap_id}.parquet"
         filepath = os.path.join(self.data_dir, filename)
         
-        df.to_parquet(filepath)
+        try:
+            df.to_parquet(filepath, index=False)
+        except Exception as e:
+            logger.warning(f"Parquet save failed for {snap_id} ({e}), falling back to CSV format...")
+            filename = f"{snap_id}.csv"
+            filepath = os.path.join(self.data_dir, filename)
+            df.to_csv(filepath, index=False)
         
         with sqlite3.connect(self.index_db) as conn:
             conn.execute(
@@ -56,7 +69,10 @@ class SnapshotStore:
         if row:
             filepath = os.path.join(self.data_dir, row[0])
             if os.path.exists(filepath):
-                return pd.read_parquet(filepath)
+                if row[0].endswith('.parquet'):
+                    return pd.read_parquet(filepath)
+                else:
+                    return pd.read_csv(filepath)
                 
         logger.warning(f"Snapshot {snap_id} not found.")
         return None

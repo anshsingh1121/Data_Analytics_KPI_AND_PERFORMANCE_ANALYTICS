@@ -44,6 +44,9 @@ class DiscrepancyExtractor:
             return pd.DataFrame()
 
     def _apply_mappings(self, df: pd.DataFrame) -> pd.DataFrame:
-        """Applies basic structural mappings before full normalization."""
-        mapped = df.rename(columns=self.field_mapping)
+        """Applies basic structural mappings before full normalization, preventing column collisions."""
+        safe_map = {k: v for k, v in self.field_mapping.items() if k in df.columns and v not in df.columns}
+        mapped = df.rename(columns=safe_map)
+        if mapped.columns.duplicated().any():
+            mapped = mapped.loc[:, ~mapped.columns.duplicated()].copy()
         return mapped
