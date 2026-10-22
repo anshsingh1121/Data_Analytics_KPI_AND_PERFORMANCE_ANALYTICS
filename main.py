@@ -688,6 +688,106 @@ def cmd_deadline_check(args):
 
     return 0
 
+def cmd_check_dates(args):
+    """Inspects the date range, monthly distribution, and cycle tags in processed/raw tasks."""
+    print("=" * 70)
+    print("DATA CERTIFICATION KPI SYSTEM — DATASET DATE FRAME INSPECTION")
+    print("=" * 70)
+    
+    tasks_path = Path('data/processed/cert_tasks_processed.csv')
+    if not tasks_path.exists():
+        tasks_path = Path('data/raw/cert_tasks_raw.csv')
+    
+    if not tasks_path.exists():
+        print("[!] No task dataset found in data/processed/ or data/raw/.")
+        print("    If running in corporate live mode, execute:")
+        print("        python main.py pipeline --mode live")
+        print("    Or for offline demo mode:")
+        print("        python main.py generate-demo")
+        return 1
+
+    df = pd.read_csv(tasks_path)
+    print(f"Loaded dataset: {tasks_path}")
+    print(f"Total task records: {len(df):,}")
+
+    date_col = None
+    for candidate in ['sys_created_on', 'created_at']:
+        if candidate in df.columns:
+            date_col = candidate
+            break
+
+    if not date_col:
+        print("[!] Neither 'sys_created_on' nor 'created_at' column found in dataset.")
+        print(f"    Available columns: {list(df.columns)}")
+        return 1
+
+    df['parsed_date'] = pd.to_datetime(df[date_col], errors='coerce')
+    valid_dates = df.dropna(subset=['parsed_date']).copy()
+    
+    if valid_dates.empty:
+        print(f"[!] No valid dates could be parsed from column '{date_col}'.")
+        return 1
+
+    min_date = valid_dates['parsed_date'].min()
+    max_date = valid_dates['parsed_date'].max()
+
+    print(f"\nDate Column Used   : {date_col}")
+    print(f"Earliest Task Date : {min_date.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Latest Task Date   : {max_date.strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"Total Date Span    : {(max_date.date() - min_date.date()).days} calendar days")
+
+    # Monthly breakdown
+    valid_dates['year_month'] = valid_dates['parsed_date'].dt.to_period('M').astype(str)
+    monthly = valid_dates.groupby('year_month').agg(
+        task_count=('parsed_date', 'count'),
+        min_date=('parsed_date', lambda s: s.min().strftime('%Y-%m-%d')),
+        max_date=('parsed_date', lambda s: s.max().strftime('%Y-%m-%d'))
+    ).reset_index()
+
+    print("\n" + "-" * 70)
+    print("TASKS BREAKDOWN BY MONTH (Use these dates in the dashboard!):")
+    print("-" * 70)
+    print(f"{'Year-Month':<12} | {'Task Count':<12} | {'Min Date':<12} | {'Max Date':<12}")
+    print("-" * 70)
+    for _, row in monthly.iterrows():
+        print(f"{row['year_month']:<12} | {row['task_count']:<12,d} | {row['min_date']:<12} | {row['max_date']:<12}")
+    print("-" * 70)
+
+    # Cycle tag breakdown
+    cycle_col = None
+    for candidate in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+        if candidate in df.columns:
+            cycle_col = candidate
+            break
+
+    if cycle_col:
+        print("\n" + "-" * 70)
+        print(f"TASKS BREAKDOWN BY CYCLE TAG ({cycle_col}):")
+        print("-" * 70)
+        c_summary = valid_dates.groupby(cycle_col).agg(
+            task_count=('parsed_date', 'count'),
+            min_date=('parsed_date', lambda s: s.min().strftime('%Y-%m-%d')),
+            max_date=('parsed_date', lambda s: s.max().strftime('%Y-%m-%d'))
+        ).reset_index()
+        print(f"{'Cycle Tag':<25} | {'Task Count':<12} | {'Min Date':<12} | {'Max Date':<12}")
+        print("-" * 70)
+        for _, row in c_summary.iterrows():
+            print(f"{str(row[cycle_col]):<25} | {row['task_count']:<12,d} | {row['min_date']:<12} | {row['max_date']:<12}")
+        print("-" * 70)
+
+    # Discrepancies check
+    disc_path = Path('data/processed/discrepancies_processed.csv')
+    if disc_path.exists():
+        df_d = pd.read_csv(disc_path)
+        print(f"\nDiscrepancies dataset : {disc_path} ({len(df_d):,} records)")
+
+    print("\n[TIP] Dashboard Usage:")
+    print("  In the Streamlit Dashboard, go to 'Compare Any 2 Quarters (Manual Dates)'")
+    print("  or '2026: Q1 vs Q4 Comparison' and enter the start and end dates shown above")
+    print("  to perfectly match your corporate ServiceNow tasks!")
+    print("=" * 70)
+    return 0
+
 def main():
     parser = argparse.ArgumentParser(
         description="Data Certification KPI & Performance Analysis System CLI",
@@ -707,6 +807,7 @@ def main():
     subparsers.add_parser("compare-cycles", help="Compare current vs previous certification cycles")
     subparsers.add_parser("export", help="Generate consolidated CSV and Excel reports")
     subparsers.add_parser("deadline-check", help="Run deadline and SLA risk assessment")
+    subparsers.add_parser("check-dates", help="Inspect exact date ranges, monthly counts, and cycle tags in task data")
     subparsers.add_parser("run-dashboard", help="Launch the local Streamlit dashboard")
 
     args = parser.parse_args()
@@ -720,6 +821,7 @@ def main():
         "compare-cycles": cmd_compare_cycles,
         "export": cmd_export,
         "deadline-check": cmd_deadline_check,
+        "check-dates": cmd_check_dates,
     }
 
     if args.command == "run-dashboard":
