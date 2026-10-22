@@ -479,7 +479,8 @@ elif page == "2026: Q1 vs Q4 Comparison":
                 subset=["Favorable"]
             ),
             use_container_width=True,
-            height=450
+            height=450,
+            hide_index=True
         )
     with col_c:
         st.subheader("📊 Rate Metrics Comparison")
@@ -558,7 +559,8 @@ elif page == "2025: Q1 vs Q4 Comparison":
                 subset=["Favorable"]
             ),
             use_container_width=True,
-            height=450
+            height=450,
+            hide_index=True
         )
     with col_c:
         st.subheader("📊 Rate Metrics: 2025 Q1 vs Q4")
@@ -653,7 +655,8 @@ elif page == "Certifier Productivity (Worst Performers)":
                 subset=["Performance Status"]
             ),
             use_container_width=True,
-            height=400
+            height=400,
+            hide_index=True
         )
     else:
         st.info("No certifier records available in current filter scope.")
@@ -690,14 +693,14 @@ elif page == "Backlog & SLA Monitoring":
         st.subheader("⚠️ Imminent SLA Deadlines (Next 24 Hours / 1 Day)")
         near_list = alerts.get('near_deadline_tasks', [])
         if near_list:
-            st.dataframe(pd.DataFrame(near_list), use_container_width=True, height=300)
+            st.dataframe(pd.DataFrame(near_list), use_container_width=True, height=300, hide_index=True)
         else:
             st.success("Zero open tasks approaching deadline within 1 day (≤1d).")
 
     st.subheader("🚨 Overdue Tasks Requiring Urgent Escalation")
     overdue_list = alerts.get('overdue_tasks', [])
     if overdue_list:
-        st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, height=280)
+        st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, height=280, hide_index=True)
     else:
         st.success("Zero overdue tasks in active scope.")
 
@@ -725,7 +728,7 @@ elif page == "Daily Performance":
 
         with col2:
             st.subheader("Daily Closures Data Table")
-            st.dataframe(daily_df, use_container_width=True, height=650)
+            st.dataframe(daily_df, use_container_width=True, height=650, hide_index=True)
     else:
         st.info("No completion timestamps available to compute daily performance.")
 
@@ -764,7 +767,7 @@ elif page == "Data Quality & Discrepancies":
 
     st.subheader("Discrepancy Records Detail Table")
     display_cols = [c for c in ['number', 'u_certification_task', 'u_application', 'u_field', 'u_issue_category', 'u_status', 'sys_created_on', 'u_resolved_on'] if c in c_disc.columns]
-    st.dataframe(c_disc[display_cols].head(500), use_container_width=True, height=350)
+    st.dataframe(c_disc[display_cols].head(500), use_container_width=True, height=350, hide_index=True)
 
 # -----------------------------------------------------------------------------
 # PAGE 7: EXCEPTION RESOLUTION
@@ -796,7 +799,7 @@ elif page == "Exception Resolution":
         with col_r:
             st.subheader("Unresolved Discrepancies")
             unresolved = exc_df[exc_df['Status'].isin(['Open', 'open'])]
-            st.dataframe(unresolved.head(200), use_container_width=True, height=320)
+            st.dataframe(unresolved.head(200), use_container_width=True, height=320, hide_index=True)
     else:
         st.info("No discrepancy records found.")
 

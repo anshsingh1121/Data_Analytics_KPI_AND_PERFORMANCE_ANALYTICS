@@ -222,8 +222,13 @@ class ReportGenerator:
 
         # Sort: "worst" puts certifiers taking more time and with low completion rates at the top
         if sort_by == "worst":
-            return prod.sort_values(by=['Avg Completion Time (Days)', 'Open Tasks', 'Completion Rate %'], ascending=[False, False, True])
-        return prod.sort_values('Completed Tasks', ascending=False)
+            sorted_prod = prod.sort_values(by=['Avg Completion Time (Days)', 'Open Tasks', 'Completion Rate %'], ascending=[False, False, True]).reset_index(drop=True)
+        else:
+            sorted_prod = prod.sort_values('Completed Tasks', ascending=False).reset_index(drop=True)
+
+        # Add clean 1-based Rank column so roster is clearly ordered
+        sorted_prod.insert(0, 'Rank', [f"#{i+1}" for i in range(len(sorted_prod))])
+        return sorted_prod
 
     def build_exception_resolution_df(self, disc_df: pd.DataFrame) -> pd.DataFrame:
         """Builds exception resolution duration distribution."""
