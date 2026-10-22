@@ -1,12 +1,8 @@
-import os
 import sys
-import glob
 from pathlib import Path
-from datetime import datetime, timezone
 
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
 
@@ -16,10 +12,12 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.config.loader import ConfigLoader
-from src.config.validation import ConfigValidator
 from src.analytics.kpi_engine import KPIEngine
 from src.analytics.cycle_manager import CycleManager
 from src.scheduler.deadline_monitor import DeadlineMonitor
+from src.reporting.report_generator import ReportGenerator
+from src.storage.run_history import RunHistory
+from src.storage.snapshot_store import SnapshotStore
 
 # -----------------------------------------------------------------------------
 # Streamlit App Configuration
@@ -138,8 +136,8 @@ with st.sidebar:
     # Date validation badge
     st.markdown("""
     <div style="background-color: #ECFDF5; border: 1px solid #A7F3D0; border-radius: 6px; padding: 6px 10px; margin-top: 6px; margin-bottom: 8px;">
-        <span style="color: #065F46; font-size: 11px; font-weight: 600;">✓ Calendar Quarters Aligned</span><br>
-        <span style="color: #047857; font-size: 10px;">Full calendar months strictly verified</span>
+        <span style="color: #065F46; font-size: 11px; font-weight: 600;">✓ Date-Wise Campaigns Aligned</span><br>
+        <span style="color: #047857; font-size: 10px;">Campaign dates strictly verified</span>
     </div>
     """, unsafe_allow_html=True)
 
@@ -282,7 +280,7 @@ def get_quarter_kpis(df_tasks, df_disc, q_name):
         t_dates = pd.to_datetime(q_t[date_col], errors='coerce').dt.date
         q_t = q_t[(t_dates >= s_date) & (t_dates <= e_date)].copy()
 
-    q_d = disc_df[disc_df['u_certification_task'].isin(q_t['sys_id'])].copy() if disc_df is not None and not q_t.empty else pd.DataFrame()
+    q_d = df_disc[df_disc['u_certification_task'].isin(q_t['sys_id'])].copy() if df_disc is not None and not q_t.empty else pd.DataFrame()
     w_days = meta.get('elapsed_working_days') if (meta.get('is_active') and meta.get('elapsed_working_days')) else meta.get('total_working_days', 15)
     res_kpis = kpi_engine.calculate_all_kpis(
         q_t, q_d,
@@ -702,10 +700,71 @@ elif page == "Backlog & SLA Monitoring":
         st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, height=280)
     else:
         st.success("Zero overdue tasks in active scope.")
-    if overdue_list:
-        st.dataframe(pd.DataFrame(overdue_list), use_container_width=True, height=280)
+
+# -----------------------------------------------------------------------------
+# PAGE 7: DAILY PERFORMANCE
+# -----------------------------------------------------------------------------
+elif page == "Daily Performance":
+    st.markdown('<div class="main-header">Daily Performance & Closure Velocity</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Daily task completion velocity, cumulative progress, and working day calendar tracking</div>', unsafe_allow_html=True)
+
+    rep_gen = ReportGenerator(curr_meta, app_mode=app_mode)
+    daily_df = rep_gen.build_daily_trends_df(c_tasks)
+
+    if not daily_df.empty:
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            fig_daily = px.bar(daily_df, x='Date', y='Daily Closures', title="Daily Task Closures", color_discrete_sequence=['#3B82F6'])
+            fig_daily.add_scatter(x=daily_df['Date'], y=daily_df['7-Day Moving Avg'], mode='lines', name='7-Day MA', line=dict(color='#DC2626', width=2))
+            fig_daily.update_layout(height=350)
+            st.plotly_chart(fig_daily, use_container_width=True)
+
+            fig_cum = px.line(daily_df, x='Date', y='Cumulative Closures', title="Cumulative Closures Over Cycle", color_discrete_sequence=['#10B981'])
+            fig_cum.update_layout(height=280)
+            st.plotly_chart(fig_cum, use_container_width=True)
+
+        with col2:
+            st.subheader("Daily Closures Data Table")
+            st.dataframe(daily_df, use_container_width=True, height=650)
     else:
-        st.success("Zero overdue tasks in active scope.")
+        st.info("No completion timestamps available to compute daily performance.")
+
+# -----------------------------------------------------------------------------
+# PAGE 8: DATA QUALITY & DISCREPANCIES
+# -----------------------------------------------------------------------------
+elif page == "Data Quality & Discrepancies":
+    st.markdown('<div class="main-header">Data Quality & Exception Discrepancies</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Audit findings, field validation failures, and discrepancy categorization (Table: u_failed_data_certifications)</div>', unsafe_allow_html=True)
+
+    col1, col2, col3, col4 = st.columns(4)
+    total_disc = len(c_disc)
+    col1.metric("Total Discrepancies", f"{total_disc:,}")
+    col2.metric("Discrepancy Rate", f"{kpis['kpi_5_discrepancy_rate']['value']}%")
+    col3.metric("Data Accuracy / Pass Rate", f"{kpis['kpi_6_data_accuracy']['value']}%")
+    resolved_count = len(c_disc[c_disc['u_status'].isin(['Resolved', 'Closed', 'resolved'])]) if 'u_status' in c_disc.columns else 0
+    col4.metric("Discrepancies Resolved", f"{resolved_count:,} ({(resolved_count/max(1, total_disc)*100):.1f}%)")
+
+    st.markdown("---")
+    col_l, col_r = st.columns(2)
+
+    cat_col = 'u_issue_category' if 'u_issue_category' in c_disc.columns else 'category'
+    if not c_disc.empty and cat_col in c_disc.columns:
+        with col_l:
+            fig_cat = px.pie(c_disc, names=cat_col, title="Discrepancies by Failure Category", color_discrete_sequence=px.colors.qualitative.Set2)
+            fig_cat.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig_cat, use_container_width=True)
+
+        with col_r:
+            field_col = 'u_field' if 'u_field' in c_disc.columns else 'field'
+            if field_col in c_disc.columns:
+                field_counts = c_disc[field_col].value_counts().reset_index()
+                field_counts.columns = ['Field Name', 'Count']
+                fig_field = px.bar(field_counts, x='Field Name', y='Count', title="Top Attributes / Fields with Discrepancies", color='Count', color_continuous_scale='Blues')
+                st.plotly_chart(fig_field, use_container_width=True)
+
+    st.subheader("Discrepancy Records Detail Table")
+    display_cols = [c for c in ['number', 'u_certification_task', 'u_application', 'u_field', 'u_issue_category', 'u_status', 'sys_created_on', 'u_resolved_on'] if c in c_disc.columns]
+    st.dataframe(c_disc[display_cols].head(500), use_container_width=True, height=350)
 
 # -----------------------------------------------------------------------------
 # PAGE 7: EXCEPTION RESOLUTION
