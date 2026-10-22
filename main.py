@@ -18,7 +18,10 @@ logger = logging.getLogger("DataCertPipeline")
 # Import system modules
 from src.config.loader import ConfigLoader
 from src.config.validation import ConfigValidator
-from src.data_processing.synthetic_generator import generate_synthetic_data
+try:
+    from src.data_processing.synthetic_generator import generate_synthetic_data
+except ImportError:
+    generate_synthetic_data = None
 from src.data_processing.normalizer import DataNormalizer
 from src.data_processing.validator import DataValidator
 from src.data_processing.relationships import RelationshipResolver
@@ -230,8 +233,12 @@ def _verify_live_table(client, table_name, label, required_fields):
 def _audit_table_fields(file_path, label, required_fields):
     """Audits fields in demo/offline files."""
     if not os.path.exists(file_path):
-        from src.data_processing.synthetic_generator import generate_synthetic_data
-        generate_synthetic_data()
+        try:
+            from src.data_processing.synthetic_generator import generate_synthetic_data
+            generate_synthetic_data()
+        except ImportError:
+            print(f"  [WARN] File '{file_path}' does not exist and synthetic generator is not installed.")
+            return
     df = pd.read_csv(file_path)
     print(f"\n{label} ({len(df)} records, {len(df.columns)} columns):")
     for item in required_fields:
@@ -281,6 +288,9 @@ def cmd_generate_demo(args):
     print("=" * 70)
     print("DATA CERTIFICATION KPI SYSTEM — GENERATING DEMO DATA")
     print("=" * 70)
+    if generate_synthetic_data is None:
+        print("[ERROR] Synthetic data generator is not available in this environment.")
+        return 1
     df_tasks, df_disc = generate_synthetic_data()
     print(f"\nSuccessfully generated {len(df_tasks)} tasks and {len(df_disc)} discrepancies.")
     print("Output directory: data/synthetic/")
@@ -304,8 +314,13 @@ def cmd_pipeline(args):
             tasks_path = 'data/synthetic/cert_tasks.csv'
             disc_path = 'data/synthetic/discrepancies.csv'
             if not os.path.exists(tasks_path) or not os.path.exists(disc_path):
-                logger.info("Demo data missing. Generating synthetic data...")
-                generate_synthetic_data()
+                if generate_synthetic_data is not None:
+                    logger.info("Demo data missing. Generating synthetic data...")
+                    generate_synthetic_data()
+                else:
+                    logger.error("Demo data files missing and synthetic generator is not installed.")
+                    run_hist.end_run(run_id, "FAILED", errors="Demo data missing and synthetic generator unavailable")
+                    return 1
 
             raw_tasks = pd.read_csv(tasks_path)
             raw_disc = pd.read_csv(disc_path)
