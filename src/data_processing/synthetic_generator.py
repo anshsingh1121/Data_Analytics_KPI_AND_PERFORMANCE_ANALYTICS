@@ -8,21 +8,61 @@ from datetime import datetime, timedelta
 def generate_synthetic_data(output_dir: str = 'data/synthetic'):
     """
     Generates realistic synthetic datasets for certification performance analysis.
-    Reflects the exact business requirements:
-    - Previous cycle (Q3-2026): 5,000 tasks (~95% completion, ~91% on-time, ~12% discrepancy, ~6% rework, ~8 days avg time)
-    - Current cycle (Q4-2026): 5,200 tasks (~97% completion, ~96% on-time, ~8% discrepancy, ~3% rework, ~6 days avg time)
+    Reflects the exact business requirements across all defined annual campaign quarters:
+    - Q4-2026: Oct 5 - Oct 23, 2026 (5,200 tasks, ~97% completion, ~96% on-time, ~8% discrepancy)
+    - Q1-2026: May 5 - May 22, 2026 (5,000 tasks, ~95% completion, ~91% on-time, ~12% discrepancy)
+    - Q4-2025: Oct 6 - Oct 23, 2025 (4,800 tasks, ~94% completion, ~90% on-time, ~13% discrepancy)
+    - Q1-2025: Apr 7 - Apr 25, 2025 (4,600 tasks, ~92% completion, ~88% on-time, ~15% discrepancy)
+    - Q3-2026: Jul 1 - Jul 31, 2026 (5,000 tasks, ~95% completion, ~91% on-time, ~12% discrepancy)
     Includes multiple applications, 25 certifiers, various issue categories, open & overdue backlogs, and near-deadline tasks.
     """
     os.makedirs(output_dir, exist_ok=True)
     random.seed(42)
     np.random.seed(42)
 
-    cycles = ['Q3-2026', 'Q4-2026']
-    num_tasks = {'Q3-2026': 5000, 'Q4-2026': 5200}
-    discrepancy_rates = {'Q3-2026': 0.12, 'Q4-2026': 0.08}
-    rework_rates = {'Q3-2026': 0.06, 'Q4-2026': 0.03}
-    completion_rates = {'Q3-2026': 0.95, 'Q4-2026': 0.97}
-    on_time_rates = {'Q3-2026': 0.91, 'Q4-2026': 0.96}
+    cycles = ['Q4-2026', 'Q1-2026', 'Q4-2025', 'Q1-2025', 'Q3-2026']
+    num_tasks = {
+        'Q4-2026': 5200,
+        'Q1-2026': 5000,
+        'Q4-2025': 4800,
+        'Q1-2025': 4600,
+        'Q3-2026': 5000
+    }
+    discrepancy_rates = {
+        'Q4-2026': 0.08,
+        'Q1-2026': 0.12,
+        'Q4-2025': 0.13,
+        'Q1-2025': 0.15,
+        'Q3-2026': 0.12
+    }
+    rework_rates = {
+        'Q4-2026': 0.03,
+        'Q1-2026': 0.06,
+        'Q4-2025': 0.07,
+        'Q1-2025': 0.08,
+        'Q3-2026': 0.06
+    }
+    completion_rates = {
+        'Q4-2026': 0.97,
+        'Q1-2026': 0.95,
+        'Q4-2025': 0.94,
+        'Q1-2025': 0.92,
+        'Q3-2026': 0.95
+    }
+    on_time_rates = {
+        'Q4-2026': 0.96,
+        'Q1-2026': 0.91,
+        'Q4-2025': 0.90,
+        'Q1-2025': 0.88,
+        'Q3-2026': 0.91
+    }
+    avg_days_map = {
+        'Q4-2026': 6,
+        'Q1-2026': 8,
+        'Q4-2025': 8,
+        'Q1-2025': 9,
+        'Q3-2026': 8
+    }
 
     applications = [
         'App-Finance', 'App-HR', 'App-CRM', 'App-ERP', 'App-Security', 
@@ -34,13 +74,27 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
     certifiers = [f"Certifier_{i:02d}" for i in range(1, 26)]
     
     base_dates = {
-        'Q3-2026': datetime(2026, 7, 1),
-        'Q4-2026': datetime(2026, 10, 1)
+        'Q4-2026': datetime(2026, 10, 5),
+        'Q1-2026': datetime(2026, 5, 5),
+        'Q4-2025': datetime(2025, 10, 6),
+        'Q1-2025': datetime(2025, 4, 7),
+        'Q3-2026': datetime(2026, 7, 1)
     }
 
     cycle_deadlines = {
-        'Q3-2026': datetime(2026, 9, 23),
-        'Q4-2026': datetime(2026, 12, 23)
+        'Q4-2026': datetime(2026, 10, 23),
+        'Q1-2026': datetime(2026, 5, 22),
+        'Q4-2025': datetime(2025, 10, 23),
+        'Q1-2025': datetime(2025, 4, 25),
+        'Q3-2026': datetime(2026, 7, 31)
+    }
+
+    max_creation_days = {
+        'Q4-2026': 14,
+        'Q1-2026': 13,
+        'Q4-2025': 13,
+        'Q1-2025': 14,
+        'Q3-2026': 15
     }
 
     tasks_data = []
@@ -54,16 +108,17 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
         ontime_rate = on_time_rates[cycle]
         disc_rate = discrepancy_rates[cycle]
         rew_rate = rework_rates[cycle]
-        avg_days = 8 if cycle == 'Q3-2026' else 6
+        avg_days = avg_days_map[cycle]
+        max_d = max_creation_days.get(cycle, 14)
 
         for i in range(n):
             task_id = str(uuid.uuid4())
             app = random.choice(applications)
             certifier = random.choice(certifiers)
-            created_on = base_date + timedelta(days=random.randint(0, 15), hours=random.randint(8, 17))
+            created_on = base_date + timedelta(days=random.randint(0, max_d), hours=random.randint(8, 17))
             
-            # Due date 14 days after creation
-            due_date = created_on + timedelta(days=14)
+            # SLA due date aligned with campaign deadline
+            due_date = deadline - timedelta(days=random.randint(0, 3)) if random.random() < 0.3 else deadline
 
             # Determine status
             is_completed = (random.random() < comp_rate)
@@ -76,14 +131,13 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
                 # On-time vs Late
                 is_ontime = (random.random() < ontime_rate)
                 if is_ontime:
-                    # Completed between 1 and 14 days, centered around avg_days
                     days_taken = max(1, min(14, int(np.random.normal(avg_days, 2.0))))
                     closed_at = created_on + timedelta(days=days_taken, hours=random.randint(1, 8))
                     if closed_at > due_date:
                         closed_at = due_date - timedelta(hours=random.randint(2, 24))
                 else:
-                    # Late completion (1-5 days after due date)
-                    closed_at = due_date + timedelta(days=random.randint(1, 5), hours=random.randint(1, 12))
+                    # Late completion (1-4 days after due date)
+                    closed_at = due_date + timedelta(days=random.randint(1, 4), hours=random.randint(1, 12))
             elif is_cancelled:
                 status = "Cancelled"
             else:

@@ -239,6 +239,17 @@ with st.sidebar:
                 use_container_width=True
             )
 
+    if app_mode == 'demo':
+        if st.button("🔄 Refresh Demo Pipeline Data", use_container_width=True):
+            with st.spinner("Re-generating annual quarter datasets and calculating KPIs..."):
+                from src.data_processing.synthetic_generator import generate_synthetic_data
+                from main import cmd_pipeline
+                import argparse
+                generate_synthetic_data()
+                cmd_pipeline(argparse.Namespace(mode="demo", skip_fetch=False))
+                st.cache_data.clear()
+                st.rerun()
+
 # Empty state handling
 if tasks_df is None or tasks_df.empty:
     st.warning("⚠️ No processed data found. The analytical pipeline has not been executed yet.")
