@@ -4,6 +4,8 @@ An enterprise analytics, operational risk monitoring, and executive reporting sy
 
 The system supports **ServiceNow Table API** extraction as well as a full **offline synthetic demonstration mode** with zero external dependencies required for initial operation.
 
+> 📖 **Quick Overview:** For a brief, to-the-point summary of the pipeline, business cycles, and operating modes, see the **[End-to-End Project Flow Guide](docs/PROJECT_FLOW.md)**.
+
 ---
 
 ## 1. System Architecture
