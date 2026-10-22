@@ -597,9 +597,12 @@ elif page == "All-Quarters Overview":
     st.markdown('<div class="main-header">Annual 4-Quarter Overview (2025 & 2026)</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Complete annual quarter tracking across all 4 quarters of 2025 and 2026</div>', unsafe_allow_html=True)
 
-    all_q_df = load_report_csv("all_quarters_comparison") or load_report_csv("multi_quarter_comparison")
+    all_q_df = load_report_csv("all_quarters_comparison")
+    if all_q_df is None or (isinstance(all_q_df, pd.DataFrame) and all_q_df.empty):
+        all_q_df = load_report_csv("multi_quarter_comparison")
+
     if all_q_df is not None and not all_q_df.empty:
-        st.dataframe(all_q_df, use_container_width=True, height=450)
+        st.dataframe(all_q_df, use_container_width=True, height=450, hide_index=True)
     else:
         st.info("Run the pipeline to generate the multi-quarter overview matrix.")
 
