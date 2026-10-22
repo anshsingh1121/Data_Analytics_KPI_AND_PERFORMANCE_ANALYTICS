@@ -37,17 +37,40 @@ class CycleManager:
         })
 
     def get_cycle_by_name(self, name: str) -> Dict[str, Any]:
-        """Returns cycle dict by name."""
+        """Returns cycle dict by name, with dynamic calendar quarter fallback."""
         if name in self.cycles:
             return self.cycles[name]
         if self.current_cycle.get('name') == name:
             return self.current_cycle
         if self.previous_cycle.get('name') == name:
             return self.previous_cycle
+
+        # Dynamic fallback for any quarter-year string e.g. 'Q2-2025'
+        try:
+            if '-' in name and name.startswith('Q'):
+                parts = name.split('-')
+                q_num = int(parts[0].replace('Q', ''))
+                yr = int(parts[1])
+                start_m = (q_num - 1) * 3 + 1
+                end_m = q_num * 3
+                import calendar
+                last_day = calendar.monthrange(yr, end_m)[1]
+                return {
+                    'name': name,
+                    'quarter_label': f"Q{q_num} {yr}",
+                    'year': yr,
+                    'quarter': q_num,
+                    'start_date': f"{yr}-{start_m:02d}-01",
+                    'end_date': f"{yr}-{end_m:02d}-{last_day:02d}",
+                    'final_deadline': f"{yr}-{end_m:02d}-{max(1, last_day - 7):02d}"
+                }
+        except Exception:
+            pass
+
         return {'name': name, 'start_date': '2026-10-01', 'end_date': '2026-12-31', 'final_deadline': '2026-12-23'}
 
     def assign_cycle_to_dataframe(self, df: pd.DataFrame, date_col: str = 'sys_created_on') -> pd.DataFrame:
-        """Assigns quarter cycle name (Q4-2026, Q1-2026, Q4-2025, Q1-2025) based on timestamp."""
+        """Assigns quarter cycle name (e.g. Q1-2025, Q4-2025, Q1-2026, Q4-2026) based on timestamp."""
         if df is None or df.empty:
             return df
             
@@ -68,24 +91,17 @@ class CycleManager:
         def _match_cycle(ts):
             if pd.isna(ts):
                 return 'Unknown'
-            # Check configured cycle boundaries
+            # Check configured cycle boundaries first
             for c_name, c_info in self.cycles.items():
                 s = pd.to_datetime(c_info.get('start_date'))
                 e = pd.to_datetime(c_info.get('end_date'))
                 if s <= ts <= e:
                     return c_name
-            # Fallback by year and month
+            # Fallback by year and month into 4 calendar quarters
             y = ts.year
             m = ts.month
-            if y == 2026 and 10 <= m <= 12:
-                return 'Q4-2026'
-            elif y == 2026 and 1 <= m <= 3:
-                return 'Q1-2026'
-            elif y == 2025 and 10 <= m <= 12:
-                return 'Q4-2025'
-            elif y == 2025 and 1 <= m <= 3:
-                return 'Q1-2025'
-            return 'Other'
+            q = (m - 1) // 3 + 1
+            return f"Q{q}-{y}"
 
         df['certification_cycle'] = dt_series.apply(_match_cycle)
         return df

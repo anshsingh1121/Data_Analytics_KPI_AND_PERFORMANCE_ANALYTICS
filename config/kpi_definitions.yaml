@@ -97,9 +97,9 @@ kpis:
     unit: "%"
 
   kpi_8_backlog_aging:
-    name: "Aging / Backlog"
-    description: "Age distribution and average age of tasks currently open"
-    formula: "Task Age = As-of Timestamp - Task Creation Timestamp"
+    name: "Open Backlog Tasks"
+    description: "Count of in-scope tasks currently open with aging bucket breakdown"
+    formula: "Count of Open Tasks (with aging bucket distribution)"
     aging_buckets:
       - name: "0-4 days"
         min: 0
@@ -115,11 +115,11 @@ kpis:
         max: 9999
     open_statuses: ["Open", "Work in Progress", "Pending Review"]
     thresholds:
-      target: 5.0
-      warning: 10.0
-      critical: 15.0
+      target: 50.0
+      warning: 100.0
+      critical: 200.0
     desired_trend: "lower"
-    unit: "days"
+    unit: "tasks"
 
   kpi_9_productivity:
     name: "Productivity per Certifier"
@@ -135,9 +135,10 @@ kpis:
 
   kpi_10_last_minute_closure:
     name: "Last-Minute Closure %"
-    description: "A: Near-deadline closure share; B: Near-deadline open backlog"
-    formula: "Completed Within Final N Days / Completed Tasks With Due Dates * 100"
-    warning_window_days: 5
+    description: "A: Near-deadline closure share (<=1d); B: Near-deadline open backlog (<=1d)"
+    formula: "Completed Within Final 1 Day / Completed Tasks With Due Dates * 100"
+    warning_window_days: 1
+    near_deadline_window_days: 1
     completion_statuses: ["Closed Complete"]
     open_statuses: ["Open", "Work in Progress", "Pending Review"]
     thresholds:

@@ -394,16 +394,16 @@ class KPIEngine:
         return self._create_kpi_result(name, value, rework_tasks, denominator, 0, unit, desired_trend, True, details=details)
 
     # =========================================================================
-    # KPI 8: Aging / Backlog
-    # Formula: Task Age = As-of Timestamp - Task Creation Timestamp for Open Tasks
+    # KPI 8: Open Backlog Tasks
+    # Count of in-scope open tasks and aging bucket distribution (backlog days removed from headline)
     # =========================================================================
     def kpi_8_backlog_aging(self, tasks_df: pd.DataFrame, as_of_date: Optional[Any] = None) -> Dict[str, Any]:
         """
-        KPI 8: Aging / Backlog
-        Aging buckets for currently open tasks (0-4 days, 5-9 days, 10-14 days, 15+ days).
+        KPI 8: Open Backlog Tasks
+        Measures count of active open tasks with aging bucket breakdown (0-4d, 5-9d, 10-14d, 15+d).
         """
-        name = "Aging / Backlog"
-        unit = "days"
+        name = "Open Backlog Tasks"
+        unit = "tasks"
         desired_trend = "lower"
 
         if tasks_df is None or tasks_df.empty:
@@ -440,16 +440,17 @@ class KPIEngine:
             valid_open['due_dt'] = self._to_dt(valid_open[due_col])
             overdue_count = int(len(valid_open[valid_open['due_dt'] < as_of]))
 
+        open_count = len(valid_open)
         avg_age = float(ages.mean()) if not ages.empty else 0.0
 
         details = {
+            "open_count": open_count,
             "average_age_days": round(avg_age, 2),
-            "open_count": len(valid_open),
             "overdue_count": overdue_count,
             "buckets": buckets
         }
 
-        return self._create_kpi_result(name, avg_age, int(len(valid_open)), len(tasks_df), 0, unit, desired_trend, True, details=details)
+        return self._create_kpi_result(name, float(open_count), open_count, len(tasks_df), 0, unit, desired_trend, True, details=details)
 
     # =========================================================================
     # KPI 9: Productivity per Certifier
@@ -494,10 +495,10 @@ class KPIEngine:
 
     # =========================================================================
     # KPI 10: Last-Minute Closure %
-    # A. Near-deadline closure share
-    # B. Near-deadline open backlog
+    # A. Near-deadline closure share (<=1d)
+    # B. Near-deadline open backlog (<=1d)
     # =========================================================================
-    def kpi_10_last_minute_closure(self, tasks_df: pd.DataFrame, window_days: int = 5, as_of_date: Optional[Any] = None) -> Dict[str, Any]:
+    def kpi_10_last_minute_closure(self, tasks_df: pd.DataFrame, window_days: int = 1, as_of_date: Optional[Any] = None) -> Dict[str, Any]:
         """
         KPI 10: Last-Minute Closure %
         A: Completed within final N days before due date.

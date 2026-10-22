@@ -384,17 +384,25 @@ def cmd_pipeline(args):
         logger.info("Saved processed data to data/processed/")
 
         # Step 6: Multi-Quarter KPI Engine Execution
-        # Specified quarters: Jan-Mar and Oct-Dec for 2026 and 2025
-        target_quarters = ['Q1-2025', 'Q4-2025', 'Q1-2026', 'Q4-2026']
+        # Each year split into 4 quarters: Q1 (Jan-Mar), Q2 (Apr-Jun), Q3 (Jul-Sep), Q4 (Oct-Dec)
+        # Focus on complete calendar months per user specification
+        target_quarters = [
+            'Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025',
+            'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026'
+        ]
         quarter_labels = {
             'Q1-2025': 'Jan-Mar 2025',
+            'Q2-2025': 'Apr-Jun 2025',
+            'Q3-2025': 'Jul-Sep 2025',
             'Q4-2025': 'Oct-Dec 2025',
             'Q1-2026': 'Jan-Mar 2026',
+            'Q2-2026': 'Apr-Jun 2026',
+            'Q3-2026': 'Jul-Sep 2026',
             'Q4-2026': 'Oct-Dec 2026'
         }
 
         print("\n" + "=" * 70)
-        print("QUARTER BREAKDOWN (Jan-Mar & Oct-Dec of 2025 & 2026)")
+        print("ANNUAL QUARTER BREAKDOWN (4 Quarters per Year: 2025 & 2026)")
         print("=" * 70)
         quarterly_results = {}
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
@@ -451,6 +459,7 @@ def cmd_pipeline(args):
         # Step 7: Cycle Comparisons & Multi-Quarter Consolidated Matrix
         comp_rows = cycle_mgr.compare_metrics(curr_kpis, prev_kpis, mode="like_for_like")
 
+        # KPI Keys (Backlog days removed, near deadline updated to 1d)
         kpi_keys = [
             ('kpi_1_certification_completion', 'Certification Completion %', '%'),
             ('kpi_2_daily_closure_rate', 'Daily Closure Rate', 'tasks/day'),
@@ -459,19 +468,45 @@ def cmd_pipeline(args):
             ('kpi_5_discrepancy_rate', 'Discrepancy Rate', '%'),
             ('kpi_6_data_accuracy', 'Data Accuracy / Pass Rate', '%'),
             ('kpi_7_rework_rate', 'Rejection / Rework Rate', '%'),
-            ('kpi_8_backlog_aging', 'Backlog Aging', 'days'),
+            ('kpi_8_backlog_aging', 'Open Backlog Tasks', 'tasks'),
             ('kpi_9_productivity', 'Certifier Productivity', 'tasks/day'),
-            ('kpi_10_last_minute_closure', 'Last-Minute Closure %', '%'),
+            ('kpi_10_last_minute_closure', 'Last-Minute Closure % (<=1d)', '%'),
             ('kpi_11_exception_resolution', 'Exception Resolution Time', 'days'),
             ('kpi_12_sla_achievement', 'Final SLA Achievement %', '%')
         ]
 
+        # Helper: Build single-year Q1 vs Q4 comparison table
+        def _build_year_q1_vs_q4(yr: int):
+            q1_k = f"Q1-{yr}"
+            q4_k = f"Q4-{yr}"
+            q1_dict = quarterly_results[q1_k]['kpis']
+            q4_dict = quarterly_results[q4_k]['kpis']
+            rows = []
+            for k_code, k_label, k_unit in kpi_keys:
+                v1 = q1_dict.get(k_code, {}).get('value')
+                v4 = q4_dict.get(k_code, {}).get('value')
+                diff = None
+                if v1 is not None and v4 is not None:
+                    diff = round(v4 - v1, 2)
+                rows.append({
+                    "KPI Metric": k_label,
+                    "Unit": k_unit,
+                    f"Q1-{yr} (Jan-Mar)": f"{v1}{k_unit}" if v1 is not None else "N/A",
+                    f"Q4-{yr} (Oct-Dec)": f"{v4}{k_unit}" if v4 is not None else "N/A",
+                    f"Change (Q4-{yr} vs Q1-{yr})": f"{diff:+}{k_unit}" if diff is not None else "N/A"
+                })
+            return pd.DataFrame(rows)
+
+        comp_2026_df = _build_year_q1_vs_q4(2026)
+        comp_2025_df = _build_year_q1_vs_q4(2025)
+
+        # All-quarters overview table
         multi_q_rows = []
         for k_key, k_label, k_unit in kpi_keys:
             row_dict = {"Metric Name": k_label, "Unit": k_unit}
             for q_name in target_quarters:
                 val = quarterly_results[q_name]['kpis'].get(k_key, {}).get('value')
-                row_dict[f"{q_name} ({quarter_labels[q_name]})"] = f"{val}{k_unit}" if val is not None else "N/A"
+                row_dict[f"{q_name}"] = f"{val}{k_unit}" if val is not None else "N/A"
             
             # YoY Change: Q4-2026 vs Q4-2025
             val_26 = quarterly_results['Q4-2026']['kpis'].get(k_key, {}).get('value')
@@ -494,32 +529,37 @@ def cmd_pipeline(args):
         daily_df = rep_gen.build_daily_trends_df(curr_tasks)
         backlog_df = rep_gen.build_backlog_analysis_df(curr_tasks)
         disc_df = rep_gen.build_discrepancy_analysis_df(curr_disc)
-        prod_df = rep_gen.build_certifier_productivity_df(curr_tasks, curr_meta.get('elapsed_working_days', 15))
+        # Build Certifier Productivity sorted by worst performers (taking more time)
+        prod_df = rep_gen.build_certifier_productivity_df(curr_tasks, curr_meta.get('elapsed_working_days', 15), sort_by="worst")
         exc_df = rep_gen.build_exception_resolution_df(curr_disc)
         qa_df = rep_gen.build_data_quality_report_df(tasks_resolved, disc_resolved, rel_stats)
 
         # Export CSVs
         csv_files = csv_exp.export_all({
             "kpi_summary": kpi_sum_df,
-            "multi_quarter_comparison": multi_q_df,
+            "2026_q1_vs_q4_comparison": comp_2026_df,
+            "2025_q1_vs_q4_comparison": comp_2025_df,
+            "all_quarters_comparison": multi_q_df,
             "cycle_comparison": comp_df,
             "daily_trends": daily_df,
             "backlog_analysis": backlog_df,
             "discrepancy_analysis": disc_df,
-            "certifier_productivity": prod_df,
+            "certifier_productivity_worst_first": prod_df,
             "exception_resolution": exc_df,
             "data_quality_report": qa_df
         })
 
-        # Export consolidated Excel
+        # Export consolidated Excel with dedicated 2026 and 2025 Q1 vs Q4 comparison tabs
         excel_path = excel_exp.export({
-            "4-Quarter Comparison": multi_q_df,
+            "2026 Q1 vs Q4": comp_2026_df,
+            "2025 Q1 vs Q4": comp_2025_df,
+            "All Quarters Overview": multi_q_df,
             "Management Summary": kpi_sum_df,
+            "Certifier Productivity": prod_df,
             "Cycle Comparison": comp_df,
             "Daily Trends": daily_df,
             "Backlog Analysis": backlog_df,
             "Discrepancies": disc_df,
-            "Productivity": prod_df,
             "Exceptions": exc_df,
             "Data Quality": qa_df
         }, metadata={"mode": mode, "cycle_name": curr_cycle_name})

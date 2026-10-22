@@ -170,26 +170,59 @@ class ReportGenerator:
         grouped.columns = ["Category", "Total Discrepancies", "Resolved Count", "Open Count", "Resolution Rate %"]
         return grouped.sort_values('Total Discrepancies', ascending=False)
 
-    def build_certifier_productivity_df(self, tasks_df: pd.DataFrame, working_days: int = 15) -> pd.DataFrame:
-        """Builds certifier performance table."""
+    def build_certifier_productivity_df(self, tasks_df: pd.DataFrame, working_days: int = 15, sort_by: str = "worst") -> pd.DataFrame:
+        """
+        Builds certifier performance table with dedicated metrics to identify
+        slowest certifiers / worst performers (people taking more time, low completion rates, high open backlog).
+        """
         if tasks_df is None or tasks_df.empty:
-            return pd.DataFrame(columns=["Certifier", "Assigned Tasks", "Completed Tasks", "Completion Rate %", "Daily Rate"])
+            return pd.DataFrame(columns=["Certifier", "Assigned Tasks", "Completed Tasks", "Open Tasks", "Completion Rate %", "Avg Completion Time (Days)", "Daily Rate", "Performance Status"])
 
         assignee_col = 'assigned_to' if 'assigned_to' in tasks_df.columns else 'certifier'
         state_col = 'state' if 'state' in tasks_df.columns else 'status'
+        created_col = 'sys_created_on' if 'sys_created_on' in tasks_df.columns else 'created_at'
+        closed_col = 'closed_at' if 'closed_at' in tasks_df.columns else 'completed_at'
 
         if assignee_col not in tasks_df.columns:
             return pd.DataFrame()
 
         total = tasks_df.groupby(assignee_col).size().rename('Assigned Tasks')
-        completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].groupby(assignee_col).size().rename('Completed Tasks')
+        completed_mask = tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])
+        completed_df = tasks_df[completed_mask].copy()
+        completed = completed_df.groupby(assignee_col).size().rename('Completed Tasks')
 
         prod = pd.concat([total, completed], axis=1).fillna(0).reset_index()
         prod.columns = ["Certifier", "Assigned Tasks", "Completed Tasks"]
         prod['Assigned Tasks'] = prod['Assigned Tasks'].astype(int)
         prod['Completed Tasks'] = prod['Completed Tasks'].astype(int)
+        prod['Open Tasks'] = prod['Assigned Tasks'] - prod['Completed Tasks']
         prod['Completion Rate %'] = ((prod['Completed Tasks'] / prod['Assigned Tasks']) * 100.0).round(1)
         prod['Daily Rate'] = (prod['Completed Tasks'] / max(1, working_days)).round(2)
+
+        # Calculate Average Completion Time (Days) per certifier (time taken to complete tasks)
+        if not completed_df.empty and created_col in completed_df.columns and closed_col in completed_df.columns:
+            completed_df['c_dt'] = pd.to_datetime(completed_df[created_col], errors='coerce')
+            completed_df['cl_dt'] = pd.to_datetime(completed_df[closed_col], errors='coerce')
+            completed_df['days_taken'] = (completed_df['cl_dt'] - completed_df['c_dt']).dt.total_seconds() / 86400.0
+            avg_time = completed_df.groupby(assignee_col)['days_taken'].mean().round(1).rename('Avg Completion Time (Days)')
+            prod = prod.merge(avg_time, left_on='Certifier', right_index=True, how='left')
+            prod['Avg Completion Time (Days)'] = prod['Avg Completion Time (Days)'].fillna(0.0)
+        else:
+            prod['Avg Completion Time (Days)'] = 0.0
+
+        # Performance Flag for worst performers / slow closures
+        def _classify(row):
+            if row['Completion Rate %'] < 50.0 or row['Avg Completion Time (Days)'] > 10.0:
+                return "Needs Urgent Attention (Slow / High Backlog)"
+            elif row['Completion Rate %'] < 80.0 or row['Avg Completion Time (Days)'] > 6.0:
+                return "Moderate / Slower Pace"
+            return "Good / On Track"
+
+        prod['Performance Status'] = prod.apply(_classify, axis=1)
+
+        # Sort: "worst" puts certifiers taking more time and with low completion rates at the top
+        if sort_by == "worst":
+            return prod.sort_values(by=['Avg Completion Time (Days)', 'Open Tasks', 'Completion Rate %'], ascending=[False, False, True])
         return prod.sort_values('Completed Tasks', ascending=False)
 
     def build_exception_resolution_df(self, disc_df: pd.DataFrame) -> pd.DataFrame:

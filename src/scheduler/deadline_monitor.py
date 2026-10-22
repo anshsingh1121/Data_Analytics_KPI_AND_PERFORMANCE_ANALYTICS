@@ -12,7 +12,7 @@ class DeadlineMonitor:
     and operational SLA risks.
     """
 
-    def __init__(self, warning_window_days: int = 5):
+    def __init__(self, warning_window_days: int = 1):
         self.warning_window_days = warning_window_days
 
     def monitor(self, tasks_df: pd.DataFrame, as_of_date: Optional[Any] = None) -> Dict[str, Any]:
