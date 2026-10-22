@@ -383,36 +383,55 @@ def cmd_pipeline(args):
         disc_resolved.to_csv('data/processed/discrepancies_processed.csv', index=False)
         logger.info("Saved processed data to data/processed/")
 
-        # Step 6: Multi-Quarter KPI Engine Execution
-        # Each year split into 4 quarters: Q1 (Jan-Mar), Q2 (Apr-Jun), Q3 (Jul-Sep), Q4 (Oct-Dec)
-        # Focus on complete calendar months per user specification
+        # Date-wise campaign processing as specified:
+        # Q4 2026: Oct 5 - Oct 23, 2026
+        # Q2 2026 / Q1 2026: May 5 - May 22, 2026
+        # Q4 2025: Oct 6 - Oct 23, 2025
+        # Q2 2025 / Q1 2025: Apr 7 - Apr 25, 2025
         target_quarters = [
             'Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025',
             'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026'
         ]
         quarter_labels = {
-            'Q1-2025': 'Jan-Mar 2025',
-            'Q2-2025': 'Apr-Jun 2025',
-            'Q3-2025': 'Jul-Sep 2025',
-            'Q4-2025': 'Oct-Dec 2025',
-            'Q1-2026': 'Jan-Mar 2026',
-            'Q2-2026': 'Apr-Jun 2026',
-            'Q3-2026': 'Jul-Sep 2026',
-            'Q4-2026': 'Oct-Dec 2026'
+            'Q1-2025': 'Apr 7 - Apr 25, 2025',
+            'Q2-2025': 'Apr 7 - Apr 25, 2025',
+            'Q3-2025': 'Jul 1 - Sep 30, 2025',
+            'Q4-2025': 'Oct 6 - Oct 23, 2025',
+            'Q1-2026': 'May 5 - May 22, 2026',
+            'Q2-2026': 'May 5 - May 22, 2026',
+            'Q3-2026': 'Jul 1 - Jul 31, 2026',
+            'Q4-2026': 'Oct 5 - Oct 23, 2026'
         }
 
         print("\n" + "=" * 70)
-        print("ANNUAL QUARTER BREAKDOWN (4 Quarters per Year: 2025 & 2026)")
+        print("ANNUAL QUARTER BREAKDOWN (Date-Wise Specified Campaigns)")
         print("=" * 70)
         quarterly_results = {}
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
 
+        alias_map = {
+            'Q2-2026': ['Q2-2026', 'Q1-2026'],
+            'Q1-2026': ['Q1-2026', 'Q2-2026'],
+            'Q2-2025': ['Q2-2025', 'Q1-2025'],
+            'Q1-2025': ['Q1-2025', 'Q2-2025']
+        }
+
         for q_name in target_quarters:
             q_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(q_name))
-            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'] == q_name].copy()
-            q_disc = disc_resolved[disc_resolved['certification_cycle'] == q_name].copy()
+            match_cycles = alias_map.get(q_name, [q_name])
+            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'].isin(match_cycles)].copy()
             
-            w_days = q_meta.get('total_working_days', 60)
+            # Enforce exact date boundaries for date-wise precision
+            date_col = 'sys_created_on' if 'sys_created_on' in q_tasks.columns else ('created_at' if 'created_at' in q_tasks.columns else None)
+            if date_col and q_meta.get('start_date') and q_meta.get('end_date'):
+                s_date = pd.to_datetime(q_meta['start_date']).date()
+                e_date = pd.to_datetime(q_meta['end_date']).date()
+                t_dates = pd.to_datetime(q_tasks[date_col], errors='coerce').dt.date
+                q_tasks = q_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+
+            q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy()
+            
+            w_days = q_meta.get('total_working_days', 15)
             if q_meta.get('is_active') and q_meta.get('elapsed_working_days'):
                 w_days = q_meta['elapsed_working_days']
 
@@ -429,7 +448,7 @@ def cmd_pipeline(args):
                 'kpis': q_kpis
             }
             lbl = quarter_labels.get(q_name, q_name)
-            print(f"  {q_name} ({lbl:<12}) : {len(q_tasks):>6} tasks, {len(q_disc):>4} discrepancies")
+            print(f"  {q_name} ({lbl:<20}) : {len(q_tasks):>6} tasks, {len(q_disc):>4} discrepancies")
 
         # Determine active cycle for headline reports
         curr_tasks = quarterly_results['Q4-2026']['tasks']
@@ -481,6 +500,8 @@ def cmd_pipeline(args):
             q4_k = f"Q4-{yr}"
             q1_dict = quarterly_results[q1_k]['kpis']
             q4_dict = quarterly_results[q4_k]['kpis']
+            q1_lbl = quarter_labels.get(q1_k, q1_k)
+            q4_lbl = quarter_labels.get(q4_k, q4_k)
             rows = []
             for k_code, k_label, k_unit in kpi_keys:
                 v1 = q1_dict.get(k_code, {}).get('value')
@@ -491,9 +512,9 @@ def cmd_pipeline(args):
                 rows.append({
                     "KPI Metric": k_label,
                     "Unit": k_unit,
-                    f"Q1-{yr} (Jan-Mar)": f"{v1}{k_unit}" if v1 is not None else "N/A",
-                    f"Q4-{yr} (Oct-Dec)": f"{v4}{k_unit}" if v4 is not None else "N/A",
-                    f"Change (Q4-{yr} vs Q1-{yr})": f"{diff:+}{k_unit}" if diff is not None else "N/A"
+                    f"{q1_k} ({q1_lbl})": f"{v1}{k_unit}" if v1 is not None else "N/A",
+                    f"{q4_k} ({q4_lbl})": f"{v4}{k_unit}" if v4 is not None else "N/A",
+                    f"Change ({q4_k} vs {q1_k})": f"{diff:+}{k_unit}" if diff is not None else "N/A"
                 })
             return pd.DataFrame(rows)
 

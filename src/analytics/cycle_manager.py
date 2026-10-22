@@ -19,17 +19,17 @@ class CycleManager:
         self.cycles = self.config.get('cycles', {})
         self.current_cycle = self.config.get('current_cycle', {
             'name': 'Q4-2026',
-            'quarter_label': 'Oct-Dec 2026',
-            'start_date': '2026-10-01',
-            'end_date': '2026-12-31',
-            'final_deadline': '2026-12-23'
+            'quarter_label': 'Oct 5 - Oct 23, 2026',
+            'start_date': '2026-10-05',
+            'end_date': '2026-10-23',
+            'final_deadline': '2026-10-23'
         })
         self.previous_cycle = self.config.get('previous_cycle', {
             'name': 'Q1-2026',
-            'quarter_label': 'Jan-Mar 2026',
-            'start_date': '2026-01-01',
-            'end_date': '2026-03-31',
-            'final_deadline': '2026-03-24'
+            'quarter_label': 'May 5 - May 22, 2026',
+            'start_date': '2026-05-05',
+            'end_date': '2026-05-22',
+            'final_deadline': '2026-05-22'
         })
         self.comparison_settings = self.config.get('comparison_settings', {
             'mode': 'like_for_like',
@@ -91,12 +91,37 @@ class CycleManager:
         def _match_cycle(ts):
             if pd.isna(ts):
                 return 'Unknown'
-            # Check configured cycle boundaries first
+            d = ts.date()
+
+            # Date-wise campaign processing as specified:
+            # Q4 2026: Oct 5 - Oct 23, 2026
+            if date(2026, 10, 5) <= d <= date(2026, 10, 23):
+                return 'Q4-2026'
+
+            # Q1 2026 / Q2 2026: May 5 - May 22, 2026
+            if date(2026, 5, 5) <= d <= date(2026, 5, 22):
+                return 'Q1-2026'
+
+            # Q4 2025: Oct 6 - Oct 23, 2025
+            if date(2025, 10, 6) <= d <= date(2025, 10, 23):
+                return 'Q4-2025'
+
+            # Q1 2025 / Q2 2025: Apr 7 - Apr 25, 2025
+            if date(2025, 4, 7) <= d <= date(2025, 4, 25):
+                return 'Q1-2025'
+
+            # Demo / test synthetic data support: July 2026
+            if d.year == 2026 and d.month == 7:
+                return 'Q3-2026'
+
+            # Check configured cycle boundaries in self.cycles
             for c_name, c_info in self.cycles.items():
-                s = pd.to_datetime(c_info.get('start_date'))
-                e = pd.to_datetime(c_info.get('end_date'))
-                if s <= ts <= e:
-                    return c_name
+                if c_info.get('start_date') and c_info.get('end_date'):
+                    s = pd.to_datetime(c_info['start_date']).date()
+                    e = pd.to_datetime(c_info['end_date']).date()
+                    if s <= d <= e:
+                        return c_name
+
             # Fallback by year and month into 4 calendar quarters
             y = ts.year
             m = ts.month
@@ -130,8 +155,8 @@ class CycleManager:
 
     def get_cycle_metadata(self, cycle: Dict[str, Any], as_of_date: Optional[Any] = None) -> Dict[str, Any]:
         """Provides rich metadata about a cycle including working days."""
-        start = pd.to_datetime(cycle.get('start_date', '2026-10-01'))
-        end = pd.to_datetime(cycle.get('end_date', '2026-12-31'))
+        start = pd.to_datetime(cycle.get('start_date', '2026-10-05'))
+        end = pd.to_datetime(cycle.get('end_date', '2026-10-23'))
         deadline = pd.to_datetime(cycle.get('final_deadline', end))
         
         as_of = pd.to_datetime(as_of_date) if as_of_date else pd.to_datetime('2026-10-23') # Default demo date or now

@@ -179,8 +179,24 @@ with st.sidebar:
             index=0
         )
 
-        # Filter by cycle
-        c_tasks = tasks_df[tasks_df[cycle_col] == selected_cycle].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
+        # Filter by cycle with alias support (Q1/Q2 Spring campaign alignment)
+        alias_map = {
+            'Q2-2026': ['Q2-2026', 'Q1-2026'],
+            'Q1-2026': ['Q1-2026', 'Q2-2026'],
+            'Q2-2025': ['Q2-2025', 'Q1-2025'],
+            'Q1-2025': ['Q1-2025', 'Q2-2025']
+        }
+        filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
+        c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
+        
+        # Enforce exact cycle date boundaries for precise date-wise validation
+        c_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(selected_cycle))
+        date_col = 'sys_created_on' if 'sys_created_on' in c_tasks.columns else ('created_at' if 'created_at' in c_tasks.columns else None)
+        if date_col and c_meta.get('start_date') and c_meta.get('end_date'):
+            s_date = pd.to_datetime(c_meta['start_date']).date()
+            e_date = pd.to_datetime(c_meta['end_date']).date()
+            t_dates = pd.to_datetime(c_tasks[date_col], errors='coerce').dt.date
+            c_tasks = c_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
         
         # Application filter
         app_col = 'cmdb_ci' if 'cmdb_ci' in c_tasks.columns else 'application'
@@ -243,15 +259,31 @@ kpi_engine = KPIEngine(kpi_cfg, cycle_cfg)
 curr_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(selected_cycle))
 prev_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.previous_cycle)
 
-# Helper function to get KPIs for any specific quarter with date alignment
+# Helper function to get KPIs for any specific quarter with exact date alignment
 def get_quarter_kpis(df_tasks, df_disc, q_name):
     if df_tasks is None or df_tasks.empty:
         return {}, pd.DataFrame(), pd.DataFrame(), {}
     q_col = 'certification_cycle' if 'certification_cycle' in df_tasks.columns else ('u_certification_activity' if 'u_certification_activity' in df_tasks.columns else 'u_certification_cycle')
-    q_t = df_tasks[df_tasks[q_col] == q_name].copy() if q_col in df_tasks.columns else pd.DataFrame()
-    q_d = df_disc[df_disc['u_certification_task'].isin(q_t['sys_id'])].copy() if df_disc is not None and not q_t.empty else pd.DataFrame()
+    alias_map = {
+        'Q2-2026': ['Q2-2026', 'Q1-2026'],
+        'Q1-2026': ['Q1-2026', 'Q2-2026'],
+        'Q2-2025': ['Q2-2025', 'Q1-2025'],
+        'Q1-2025': ['Q1-2025', 'Q2-2025']
+    }
+    match_cycles = alias_map.get(q_name, [q_name])
+    q_t = df_tasks[df_tasks[q_col].isin(match_cycles)].copy() if q_col in df_tasks.columns else pd.DataFrame()
     meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(q_name))
-    w_days = meta.get('elapsed_working_days') if (meta.get('is_active') and meta.get('elapsed_working_days')) else meta.get('total_working_days', 60)
+
+    # Enforce exact date boundaries for date-wise precision
+    date_col = 'sys_created_on' if 'sys_created_on' in q_t.columns else ('created_at' if 'created_at' in q_t.columns else None)
+    if date_col and meta.get('start_date') and meta.get('end_date'):
+        s_date = pd.to_datetime(meta['start_date']).date()
+        e_date = pd.to_datetime(meta['end_date']).date()
+        t_dates = pd.to_datetime(q_t[date_col], errors='coerce').dt.date
+        q_t = q_t[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+
+    q_d = disc_df[disc_df['u_certification_task'].isin(q_t['sys_id'])].copy() if disc_df is not None and not q_t.empty else pd.DataFrame()
+    w_days = meta.get('elapsed_working_days') if (meta.get('is_active') and meta.get('elapsed_working_days')) else meta.get('total_working_days', 15)
     res_kpis = kpi_engine.calculate_all_kpis(
         q_t, q_d,
         working_days=max(1, w_days),
@@ -263,20 +295,34 @@ def get_quarter_kpis(df_tasks, df_disc, q_name):
 # Calculate active KPIs for filtered dataset
 kpis = kpi_engine.calculate_all_kpis(
     c_tasks, c_disc,
-    working_days=curr_meta['elapsed_working_days'] if curr_meta.get('is_active') else curr_meta.get('total_working_days', 60),
+    working_days=curr_meta['elapsed_working_days'] if curr_meta.get('is_active') else curr_meta.get('total_working_days', 15),
     as_of_date=curr_meta.get('end_date', '2026-10-23'),
     final_deadline=curr_meta['final_deadline']
 )
 
 # Previous cycle tasks for comparison deltas
 cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_df.columns else ('u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle')
-prev_tasks = tasks_df[tasks_df[cycle_col] == cycle_mgr.previous_cycle.get('name', 'Q1-2026')].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
+alias_map = {
+    'Q2-2026': ['Q2-2026', 'Q1-2026'],
+    'Q1-2026': ['Q1-2026', 'Q2-2026'],
+    'Q2-2025': ['Q2-2025', 'Q1-2025'],
+    'Q1-2025': ['Q1-2025', 'Q2-2025']
+}
+prev_c_name = cycle_mgr.previous_cycle.get('name', 'Q1-2026')
+prev_cycles = alias_map.get(prev_c_name, [prev_c_name])
+prev_tasks = tasks_df[tasks_df[cycle_col].isin(prev_cycles)].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
+date_col = 'sys_created_on' if 'sys_created_on' in prev_tasks.columns else ('created_at' if 'created_at' in prev_tasks.columns else None)
+if date_col and prev_meta.get('start_date') and prev_meta.get('end_date'):
+    s_date = pd.to_datetime(prev_meta['start_date']).date()
+    e_date = pd.to_datetime(prev_meta['end_date']).date()
+    t_dates = pd.to_datetime(prev_tasks[date_col], errors='coerce').dt.date
+    prev_tasks = prev_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
 prev_disc = disc_df[disc_df['u_certification_task'].isin(prev_tasks['sys_id'])].copy() if disc_df is not None else pd.DataFrame()
 
 prev_kpis = kpi_engine.calculate_all_kpis(
     prev_tasks, prev_disc,
     working_days=prev_meta['total_working_days'],
-    as_of_date=prev_meta.get('end_date', '2026-03-31'),
+    as_of_date=prev_meta.get('end_date', '2026-05-22'),
     final_deadline=prev_meta['final_deadline']
 )
 
@@ -378,8 +424,8 @@ if page == "Executive Overview":
 # PAGE 2: 2026 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
 elif page == "2026: Q1 vs Q4 Comparison":
-    st.markdown('<div class="main-header">2026 Data Certification: Q1 (Jan-Mar) vs Q4 (Oct-Dec)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2026 and Q4-2026 campaigns</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">2026 Data Certification: Q1 (May 5 - May 22) vs Q4 (Oct 5 - Oct 23)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2026 (May 5 – May 22) and Q4-2026 (Oct 5 – Oct 23) campaigns</div>', unsafe_allow_html=True)
 
     kpis_q1, tasks_q1, disc_q1, meta_q1 = get_quarter_kpis(tasks_df, disc_df, "Q1-2026")
     kpis_q4, tasks_q4, disc_q4, meta_q4 = get_quarter_kpis(tasks_df, disc_df, "Q4-2026")
@@ -387,9 +433,9 @@ elif page == "2026: Q1 vs Q4 Comparison":
     # Date Matching & Audit Verification Banner
     st.markdown(f"""
     <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-        <span style="font-weight: 700; color: #1E293B;">🗓️ 2026 Date Matching & Audit Verification:</span><br>
-        • <b>Q1-2026 (Jan-Mar):</b> <code>{meta_q1.get('start_date', '2026-01-01')}</code> to <code>{meta_q1.get('end_date', '2026-03-31')}</code> — <b>{len(tasks_q1):,}</b> tasks, <b>{len(disc_q1):,}</b> discrepancies<br>
-        • <b>Q4-2026 (Oct-Dec):</b> <code>{meta_q4.get('start_date', '2026-10-01')}</code> to <code>{meta_q4.get('end_date', '2026-12-31')}</code> — <b>{len(tasks_q4):,}</b> tasks, <b>{len(disc_q4):,}</b> discrepancies
+        <span style="font-weight: 700; color: #1E293B;">🗓️ 2026 Date-Wise Audit & Verification:</span><br>
+        • <b>Q1-2026 (May 5 - May 22, 2026):</b> <code>{meta_q1.get('start_date', '2026-05-05')}</code> to <code>{meta_q1.get('end_date', '2026-05-22')}</code> ({meta_q1.get('total_working_days', 14)} working days) — <b>{len(tasks_q1):,}</b> tasks, <b>{len(disc_q1):,}</b> discrepancies<br>
+        • <b>Q4-2026 (Oct 5 - Oct 23, 2026):</b> <code>{meta_q4.get('start_date', '2026-10-05')}</code> to <code>{meta_q4.get('end_date', '2026-10-23')}</code> ({meta_q4.get('total_working_days', 15)} working days) — <b>{len(tasks_q4):,}</b> tasks, <b>{len(disc_q4):,}</b> discrepancies
     </div>
     """, unsafe_allow_html=True)
 
@@ -423,8 +469,8 @@ elif page == "2026: Q1 vs Q4 Comparison":
         rep_gen = ReportGenerator(meta_q4, app_mode=app_mode)
         comp_df = rep_gen.build_cycle_comparison_df(comp_rows)
         comp_df = comp_df.rename(columns={
-            "Current Value": "Q4-2026 (Oct-Dec)",
-            "Previous Value": "Q1-2026 (Jan-Mar)",
+            "Current Value": "Q4-2026 (Oct 5 - Oct 23)",
+            "Previous Value": "Q1-2026 (May 5 - May 22)",
             "Abs Change": "Delta (Q4 - Q1)"
         })
         # Remove backlog aging days row if present to respect "remove backlog days"
@@ -445,8 +491,8 @@ elif page == "2026: Q1 vs Q4 Comparison":
             ("Discrepancy %", v5_q1, v5_q4)
         ]
         fig_bars = go.Figure(data=[
-            go.Bar(name='Q1-2026 (Jan-Mar)', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#93C5FD'),
-            go.Bar(name='Q4-2026 (Oct-Dec)', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#1F497D')
+            go.Bar(name='Q1-2026 (May 5 - May 22)', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#93C5FD'),
+            go.Bar(name='Q4-2026 (Oct 5 - Oct 23)', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#1F497D')
         ])
         fig_bars.update_layout(barmode='group', height=400, margin=dict(l=20, r=20, t=30, b=40))
         st.plotly_chart(fig_bars, use_container_width=True)
@@ -458,8 +504,8 @@ elif page == "2026: Q1 vs Q4 Comparison":
 # PAGE 3: 2025 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
 elif page == "2025: Q1 vs Q4 Comparison":
-    st.markdown('<div class="main-header">2025 Data Certification: Q1 (Jan-Mar) vs Q4 (Oct-Dec)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2025 and Q4-2025 campaigns</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">2025 Data Certification: Q1 (Apr 7 - Apr 25) vs Q4 (Oct 6 - Oct 23)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2025 (Apr 7 – Apr 25) and Q4-2025 (Oct 6 – Oct 23) campaigns</div>', unsafe_allow_html=True)
 
     kpis_q1_25, tasks_q1_25, disc_q1_25, meta_q1_25 = get_quarter_kpis(tasks_df, disc_df, "Q1-2025")
     kpis_q4_25, tasks_q4_25, disc_q4_25, meta_q4_25 = get_quarter_kpis(tasks_df, disc_df, "Q4-2025")
@@ -467,9 +513,9 @@ elif page == "2025: Q1 vs Q4 Comparison":
     # Date Matching & Audit Verification Banner
     st.markdown(f"""
     <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
-        <span style="font-weight: 700; color: #1E293B;">🗓️ 2025 Date Matching & Audit Verification:</span><br>
-        • <b>Q1-2025 (Jan-Mar):</b> <code>{meta_q1_25.get('start_date', '2025-01-01')}</code> to <code>{meta_q1_25.get('end_date', '2025-03-31')}</code> — <b>{len(tasks_q1_25):,}</b> tasks, <b>{len(disc_q1_25):,}</b> discrepancies<br>
-        • <b>Q4-2025 (Oct-Dec):</b> <code>{meta_q4_25.get('start_date', '2025-10-01')}</code> to <code>{meta_q4_25.get('end_date', '2025-12-31')}</code> — <b>{len(tasks_q4_25):,}</b> tasks, <b>{len(disc_q4_25):,}</b> discrepancies
+        <span style="font-weight: 700; color: #1E293B;">🗓️ 2025 Date-Wise Audit & Verification:</span><br>
+        • <b>Q1-2025 (Apr 7 - Apr 25, 2025):</b> <code>{meta_q1_25.get('start_date', '2025-04-07')}</code> to <code>{meta_q1_25.get('end_date', '2025-04-25')}</code> ({meta_q1_25.get('total_working_days', 15)} working days) — <b>{len(tasks_q1_25):,}</b> tasks, <b>{len(disc_q1_25):,}</b> discrepancies<br>
+        • <b>Q4-2025 (Oct 6 - Oct 23, 2025):</b> <code>{meta_q4_25.get('start_date', '2025-10-06')}</code> to <code>{meta_q4_25.get('end_date', '2025-10-23')}</code> ({meta_q4_25.get('total_working_days', 14)} working days) — <b>{len(tasks_q4_25):,}</b> tasks, <b>{len(disc_q4_25):,}</b> discrepancies
     </div>
     """, unsafe_allow_html=True)
 
@@ -503,8 +549,8 @@ elif page == "2025: Q1 vs Q4 Comparison":
         rep_gen = ReportGenerator(meta_q4_25, app_mode=app_mode)
         comp_df = rep_gen.build_cycle_comparison_df(comp_rows)
         comp_df = comp_df.rename(columns={
-            "Current Value": "Q4-2025 (Oct-Dec)",
-            "Previous Value": "Q1-2025 (Jan-Mar)",
+            "Current Value": "Q4-2025 (Oct 6 - Oct 23)",
+            "Previous Value": "Q1-2025 (Apr 7 - Apr 25)",
             "Abs Change": "Delta (Q4 - Q1)"
         })
         comp_df = comp_df[~comp_df['Metric'].str.contains('Backlog Aging', na=False)]
@@ -524,8 +570,8 @@ elif page == "2025: Q1 vs Q4 Comparison":
             ("Discrepancy %", v5_q1, v5_q4)
         ]
         fig_bars = go.Figure(data=[
-            go.Bar(name='Q1-2025 (Jan-Mar)', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#FDE68A'),
-            go.Bar(name='Q4-2025 (Oct-Dec)', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#D97706')
+            go.Bar(name='Q1-2025 (Apr 7 - Apr 25)', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#FDE68A'),
+            go.Bar(name='Q4-2025 (Oct 6 - Oct 23)', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#D97706')
         ])
         fig_bars.update_layout(barmode='group', height=400, margin=dict(l=20, r=20, t=30, b=40))
         st.plotly_chart(fig_bars, use_container_width=True)
