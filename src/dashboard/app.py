@@ -105,14 +105,12 @@ def load_processed_data():
         # Consistent campaign window end dates for due_date imputation
         if tasks is not None and not tasks.empty:
             campaign_deadlines = {
-                'Q1-2026': '2026-05-22 23:59:59',
                 'Q2-2026': '2026-05-22 23:59:59',
-                'Q3-2026': '2026-07-31 23:59:59',
                 'Q4-2026': '2026-10-23 23:59:59',
-                'Q1-2025': '2025-04-25 23:59:59',
                 'Q2-2025': '2025-04-25 23:59:59',
-                'Q3-2025': '2025-09-30 23:59:59',
                 'Q4-2025': '2025-10-23 23:59:59',
+                'Q1-2026': '2026-05-22 23:59:59',
+                'Q1-2025': '2025-04-25 23:59:59',
             }
             cycle_col = 'certification_cycle' if 'certification_cycle' in tasks.columns else ('u_certification_activity' if 'u_certification_activity' in tasks.columns else None)
             mapped = tasks[cycle_col].map(campaign_deadlines) if cycle_col else pd.Series(index=tasks.index, dtype='object')
@@ -123,9 +121,9 @@ def load_processed_data():
                 for idx in tasks[mapped.isna()].index:
                     d = dates.loc[idx]
                     if pd.notna(d):
-                        if d.year == 2026 and d.month <= 5: mapped.loc[idx] = '2026-05-22 23:59:59'
+                        if d.year == 2026 and d.month <= 6: mapped.loc[idx] = '2026-05-22 23:59:59'
                         elif d.year == 2026 and d.month >= 10: mapped.loc[idx] = '2026-10-23 23:59:59'
-                        elif d.year == 2025 and d.month <= 4: mapped.loc[idx] = '2025-04-25 23:59:59'
+                        elif d.year == 2025 and d.month <= 6: mapped.loc[idx] = '2025-04-25 23:59:59'
                         elif d.year == 2025 and d.month >= 10: mapped.loc[idx] = '2025-10-23 23:59:59'
                         else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-28 23:59:59"
             
@@ -185,8 +183,8 @@ with st.sidebar:
         [
             "Executive Overview",
             "Compare Any 2 Quarters (Manual Dates)",
-            "2026: Q1 vs Q4 Comparison",
-            "2025: Q1 vs Q4 Comparison",
+            "2026: Q2 vs Q4 Comparison",
+            "2025: Q2 vs Q4 Comparison",
             "All-Quarters Overview",
             "Certifier Productivity (Worst Performers)",
             "Backlog & SLA Monitoring",
@@ -205,7 +203,7 @@ with st.sidebar:
     if tasks_df is not None and not tasks_df.empty:
         cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_df.columns else ('u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle')
         detected = list(tasks_df[cycle_col].dropna().unique()) if cycle_col in tasks_df.columns else []
-        preferred = ['Q4-2026', 'Q3-2026', 'Q2-2026', 'Q1-2026', 'Q4-2025', 'Q3-2025', 'Q2-2025', 'Q1-2025']
+        preferred = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
         available_cycles = [c for c in preferred if c in detected] + [c for c in detected if c not in preferred]
         if not available_cycles:
             available_cycles = preferred
@@ -219,9 +217,9 @@ with st.sidebar:
         # Filter by cycle with alias support (Q1/Q2 Spring campaign alignment)
         alias_map = {
             'Q2-2026': ['Q2-2026', 'Q1-2026'],
-            'Q1-2026': ['Q1-2026', 'Q2-2026'],
+            'Q4-2026': ['Q4-2026'],
             'Q2-2025': ['Q2-2025', 'Q1-2025'],
-            'Q1-2025': ['Q1-2025', 'Q2-2025']
+            'Q4-2025': ['Q4-2025']
         }
         filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
         c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
@@ -314,29 +312,23 @@ prev_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.previous_cycle)
 
 def get_default_dates(year: int, q_str: str, preset: str = "Complete Month"):
     """Returns sensible default start and end dates for a given year, quarter, and preset style."""
-    if preset == "Calendar 3-Month Quarter":
-        if q_str == "Q1": return date(year, 1, 1), date(year, 3, 31)
-        elif q_str == "Q2": return date(year, 4, 1), date(year, 6, 30)
-        elif q_str == "Q3": return date(year, 7, 1), date(year, 9, 30)
-        else: return date(year, 10, 1), date(year, 12, 31)
-    elif preset == "Campaign Window":
+    if preset == "Campaign Window":
         if year == 2026:
             if q_str in ["Q1", "Q2"]: return date(2026, 5, 5), date(2026, 5, 22)
-            elif q_str == "Q3": return date(2026, 7, 1), date(2026, 7, 31)
             else: return date(2026, 10, 5), date(2026, 10, 23)
         else:
             if q_str in ["Q1", "Q2"]: return date(2025, 4, 7), date(2025, 4, 25)
-            elif q_str == "Q3": return date(2025, 7, 1), date(2025, 9, 30)
             else: return date(2025, 10, 6), date(2025, 10, 23)
-    else: # Complete Month or Custom default
+    elif preset == "Complete Month":
         if year == 2026:
             if q_str in ["Q1", "Q2"]: return date(2026, 5, 1), date(2026, 5, 31)
-            elif q_str == "Q3": return date(2026, 7, 1), date(2026, 7, 31)
             else: return date(2026, 10, 1), date(2026, 10, 31)
         else:
             if q_str in ["Q1", "Q2"]: return date(2025, 4, 1), date(2025, 4, 30)
-            elif q_str == "Q3": return date(2025, 7, 1), date(2025, 9, 30)
             else: return date(2025, 10, 1), date(2025, 10, 31)
+    else: # Calendar 3-Month Quarter
+        if q_str in ["Q1", "Q2"]: return date(year, 4, 1), date(year, 6, 30)
+        else: return date(year, 10, 1), date(year, 12, 31)
 
 # Helper function to get KPIs for any specific quarter with manual date frame override or exact alignment
 def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
@@ -362,12 +354,8 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
     if q_t.empty and q_col in df_tasks.columns:
         alias_map = {
             'Q2-2026': ['Q2-2026', 'Q1-2026', 'Q2', 'Q1'],
-            'Q1-2026': ['Q1-2026', 'Q2-2026', 'Q1', 'Q2'],
-            'Q3-2026': ['Q3-2026', 'Q3'],
             'Q4-2026': ['Q4-2026', 'Q4'],
             'Q2-2025': ['Q2-2025', 'Q1-2025', 'Q2', 'Q1'],
-            'Q1-2025': ['Q1-2025', 'Q2-2025', 'Q1', 'Q2'],
-            'Q3-2025': ['Q3-2025', 'Q3'],
             'Q4-2025': ['Q4-2025', 'Q4']
         }
         match_cycles = alias_map.get(q_name, [q_name])
@@ -425,7 +413,7 @@ alias_map = {
     'Q2-2025': ['Q2-2025', 'Q1-2025'],
     'Q1-2025': ['Q1-2025', 'Q2-2025']
 }
-prev_c_name = cycle_mgr.previous_cycle.get('name', 'Q1-2026')
+prev_c_name = cycle_mgr.previous_cycle.get('name', 'Q2-2026')
 prev_cycles = alias_map.get(prev_c_name, [prev_c_name])
 prev_tasks = tasks_df[tasks_df[cycle_col].isin(prev_cycles)].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
 date_col = 'sys_created_on' if 'sys_created_on' in prev_tasks.columns else ('created_at' if 'created_at' in prev_tasks.columns else None)
@@ -562,27 +550,21 @@ elif page == "Compare Any 2 Quarters (Manual Dates)":
         with col_pair2:
             quick_pair = st.radio(
                 "Quick Pair Preset:",
-                ["Q1 vs Q4 (Autumn vs Spring)", "Q1 vs Q2 (Consecutive H1)", "Q2 vs Q3 (Mid-Year)", "Q3 vs Q4 (H2)", "Custom Selection"],
+                ["Q2 vs Q4 (Spring vs Autumn)", "Custom Selection"],
                 horizontal=True,
                 index=0,
                 key="quick_pair_radio"
             )
 
-        if quick_pair == "Q1 vs Q4 (Autumn vs Spring)":
-            def_a, def_b = "Q1", "Q4"
-        elif quick_pair == "Q1 vs Q2 (Consecutive H1)":
-            def_a, def_b = "Q1", "Q2"
-        elif quick_pair == "Q2 vs Q3 (Mid-Year)":
-            def_a, def_b = "Q2", "Q3"
-        elif quick_pair == "Q3 vs Q4 (H2)":
-            def_a, def_b = "Q3", "Q4"
+        if quick_pair == "Q2 vs Q4 (Spring vs Autumn)":
+            def_a, def_b = "Q2", "Q4"
         else:
-            def_a, def_b = "Q1", "Q4"
+            def_a, def_b = "Q2", "Q4"
 
         col_left_q, col_right_q = st.columns(2)
         with col_left_q:
             st.markdown("#### **Baseline Quarter (A)**")
-            qa_choice = st.selectbox("Quarter A", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_a), key="qa_select")
+            qa_choice = st.selectbox("Quarter A", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_a if def_a in ["Q2", "Q4"] else "Q2"), key="qa_select")
             qa_name = f"{qa_choice}-{comp_year}"
             preset_a = st.selectbox(
                 f"Date Preset for {qa_name}:",
@@ -597,7 +579,7 @@ elif page == "Compare Any 2 Quarters (Manual Dates)":
 
         with col_right_q:
             st.markdown("#### **Comparison Quarter (B)**")
-            qb_choice = st.selectbox("Quarter B", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_b), key="qb_select")
+            qb_choice = st.selectbox("Quarter B", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_b if def_b in ["Q2", "Q4"] else "Q4"), key="qb_select")
             qb_name = f"{qb_choice}-{comp_year}"
             preset_b = st.selectbox(
                 f"Date Preset for {qb_name}:",
@@ -763,9 +745,9 @@ elif page == "Compare Any 2 Quarters (Manual Dates)":
 # -----------------------------------------------------------------------------
 # PAGE 3: 2026 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
-elif page == "2026: Q1 vs Q4 Comparison":
-    st.markdown('<div class="main-header">2026 Data Certification: Q1 vs Q4 Comparison</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2026 and Q4-2026 — adjust or manually feed exact date frames below</div>', unsafe_allow_html=True)
+elif page == "2026: Q2 vs Q4 Comparison":
+    st.markdown('<div class="main-header">2026 Data Certification: Q2 vs Q4 Comparison</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q2-2026 (Spring) and Q4-2026 (Autumn) — adjust or manually feed exact date frames below</div>', unsafe_allow_html=True)
 
     with st.expander("⚙️ **Adjust Quarter Date Frames (Manual Dates or Presets)**", expanded=False):
         c_preset = st.selectbox(
@@ -774,22 +756,22 @@ elif page == "2026: Q1 vs Q4 Comparison":
             index=0,
             key="preset_2026_page"
         )
-        d_sa, d_ea = get_default_dates(2026, "Q1", c_preset)
+        d_sa, d_ea = get_default_dates(2026, "Q2", c_preset)
         d_sb, d_eb = get_default_dates(2026, "Q4", c_preset)
         c_d1, c_d2 = st.columns(2)
-        q1_start = c_d1.date_input("Q1 Start Date", value=d_sa, key="p26_q1_s")
-        q1_end = c_d1.date_input("Q1 End Date", value=d_ea, key="p26_q1_e")
-        q4_start = c_d2.date_input("Q4 Start Date", value=d_sb, key="p26_q4_s")
-        q4_end = c_d2.date_input("Q4 End Date", value=d_eb, key="p26_q4_e")
+        q2_start = c_d1.date_input("Q2 Start Date (Spring)", value=d_sa, key="p26_q2_s")
+        q2_end = c_d1.date_input("Q2 End Date (Spring)", value=d_ea, key="p26_q2_e")
+        q4_start = c_d2.date_input("Q4 Start Date (Autumn)", value=d_sb, key="p26_q4_s")
+        q4_end = c_d2.date_input("Q4 End Date (Autumn)", value=d_eb, key="p26_q4_e")
 
-    kpis_q1, tasks_q1, disc_q1, meta_q1 = get_quarter_kpis(tasks_df, disc_df, "Q1-2026", start_date=q1_start, end_date=q1_end)
+    kpis_q2, tasks_q2, disc_q2, meta_q2 = get_quarter_kpis(tasks_df, disc_df, "Q2-2026", start_date=q2_start, end_date=q2_end)
     kpis_q4, tasks_q4, disc_q4, meta_q4 = get_quarter_kpis(tasks_df, disc_df, "Q4-2026", start_date=q4_start, end_date=q4_end)
 
     # Date Matching & Audit Verification Banner
     st.markdown(f"""
     <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
         <span style="font-weight: 700; color: #1E293B;">🗓️ 2026 Date-Wise Audit & Verification:</span><br>
-        • <b>Q1-2026:</b> <code>{q1_start}</code> to <code>{q1_end}</code> ({meta_q1.get('total_working_days', 14)} working days) — <b>{len(tasks_q1):,}</b> tasks, <b>{len(disc_q1):,}</b> discrepancies<br>
+        • <b>Q2-2026:</b> <code>{q2_start}</code> to <code>{q2_end}</code> ({meta_q2.get('total_working_days', 14)} working days) — <b>{len(tasks_q2):,}</b> tasks, <b>{len(disc_q2):,}</b> discrepancies<br>
         • <b>Q4-2026:</b> <code>{q4_start}</code> to <code>{q4_end}</code> ({meta_q4.get('total_working_days', 15)} working days) — <b>{len(tasks_q4):,}</b> tasks, <b>{len(disc_q4):,}</b> discrepancies
     </div>
     """, unsafe_allow_html=True)
@@ -798,44 +780,44 @@ elif page == "2026: Q1 vs Q4 Comparison":
     min_avail = str(pd.to_datetime(tasks_df[date_col]).dt.date.min()) if date_col in tasks_df.columns else "N/A"
     max_avail = str(pd.to_datetime(tasks_df[date_col]).dt.date.max()) if date_col in tasks_df.columns else "N/A"
 
-    if len(tasks_q1) == 0:
-        st.warning(f"⚠️ Zero tasks found for Q1-2026 between `{q1_start}` and `{q1_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q1 start and end dates in the expander above.")
+    if len(tasks_q2) == 0:
+        st.warning(f"⚠️ Zero tasks found for Q2-2026 between `{q2_start}` and `{q2_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q2 start and end dates in the expander above.")
     if len(tasks_q4) == 0:
         st.warning(f"⚠️ Zero tasks found for Q4-2026 between `{q4_start}` and `{q4_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q4 start and end dates in the expander above.")
 
     # 4 Headline Delta Cards
     c1, c2, c3, c4 = st.columns(4)
-    v1_q1 = kpis_q1.get('kpi_1_certification_completion', {}).get('value')
+    v1_q2 = kpis_q2.get('kpi_1_certification_completion', {}).get('value')
     v1_q4 = kpis_q4.get('kpi_1_certification_completion', {}).get('value')
-    d1 = f"{(v1_q4 - v1_q1):+.1f}% vs Q1" if (v1_q1 is not None and v1_q4 is not None) else None
+    d1 = f"{(v1_q4 - v1_q2):+.1f}% vs Q2" if (v1_q2 is not None and v1_q4 is not None) else None
     c1.metric("Completion %", f"{v1_q4}%" if v1_q4 is not None else "N/A", delta=d1)
 
-    v2_q1 = kpis_q1.get('kpi_2_daily_closure_rate', {}).get('value')
+    v2_q2 = kpis_q2.get('kpi_2_daily_closure_rate', {}).get('value')
     v2_q4 = kpis_q4.get('kpi_2_daily_closure_rate', {}).get('value')
-    d2 = f"{(v2_q4 - v2_q1):+.2f} vs Q1" if (v2_q1 is not None and v2_q4 is not None) else None
+    d2 = f"{(v2_q4 - v2_q2):+.2f} vs Q2" if (v2_q2 is not None and v2_q4 is not None) else None
     c2.metric("Daily Closure Rate", f"{v2_q4} tasks/d" if v2_q4 is not None else "N/A", delta=d2)
 
-    v4_q1 = kpis_q1.get('kpi_4_avg_completion_time', {}).get('value')
+    v4_q2 = kpis_q2.get('kpi_4_avg_completion_time', {}).get('value')
     v4_q4 = kpis_q4.get('kpi_4_avg_completion_time', {}).get('value')
-    d4 = f"{(v4_q4 - v4_q1):+.2f}d vs Q1" if (v4_q1 is not None and v4_q4 is not None) else None
+    d4 = f"{(v4_q4 - v4_q2):+.2f}d vs Q2" if (v4_q2 is not None and v4_q4 is not None) else None
     c3.metric("Avg Completion Time", f"{v4_q4} days" if v4_q4 is not None else "N/A", delta=d4, delta_color="inverse")
 
-    v5_q1 = kpis_q1.get('kpi_5_discrepancy_rate', {}).get('value')
+    v5_q2 = kpis_q2.get('kpi_5_discrepancy_rate', {}).get('value')
     v5_q4 = kpis_q4.get('kpi_5_discrepancy_rate', {}).get('value')
-    d5 = f"{(v5_q4 - v5_q1):+.2f}% vs Q1" if (v5_q1 is not None and v5_q4 is not None) else None
+    d5 = f"{(v5_q4 - v5_q2):+.2f}% vs Q2" if (v5_q2 is not None and v5_q4 is not None) else None
     c4.metric("Discrepancy Rate", f"{v5_q4}%" if v5_q4 is not None else "N/A", delta=d5, delta_color="inverse")
 
     st.markdown("---")
     col_t, col_c = st.columns([3, 2])
     with col_t:
-        st.subheader("📋 2026 Q1 vs Q4 Side-by-Side KPI Matrix")
-        comp_rows = cycle_mgr.compare_metrics(kpis_q4, kpis_q1, mode="q4_vs_q1")
+        st.subheader("📋 2026 Q2 vs Q4 Side-by-Side KPI Matrix")
+        comp_rows = cycle_mgr.compare_metrics(kpis_q4, kpis_q2, mode="q4_vs_q2")
         rep_gen = ReportGenerator(meta_q4, app_mode=app_mode)
         comp_df = rep_gen.build_cycle_comparison_df(comp_rows)
         comp_df = comp_df.rename(columns={
             "Current Value": f"Q4-2026 ({q4_start} to {q4_end})",
-            "Previous Value": f"Q1-2026 ({q1_start} to {q1_end})",
-            "Absolute Change": "Delta (Q4 - Q1)"
+            "Previous Value": f"Q2-2026 ({q2_start} to {q2_end})",
+            "Absolute Change": "Delta (Q4 - Q2)"
         })
         comp_df = comp_df[~comp_df['Metric'].str.contains('Backlog Aging', na=False)]
         st.dataframe(
@@ -850,24 +832,24 @@ elif page == "2026: Q1 vs Q4 Comparison":
     with col_c:
         st.subheader("📊 Rate Metrics Comparison")
         rate_metrics = [
-            ("Completion %", v1_q1, v1_q4),
-            ("Data Accuracy %", kpis_q1.get('kpi_6_data_accuracy', {}).get('value'), kpis_q4.get('kpi_6_data_accuracy', {}).get('value')),
-            ("Discrepancy %", v5_q1, v5_q4)
+            ("Completion %", v1_q2, v1_q4),
+            ("Data Accuracy %", kpis_q2.get('kpi_6_data_accuracy', {}).get('value'), kpis_q4.get('kpi_6_data_accuracy', {}).get('value')),
+            ("Discrepancy %", v5_q2, v5_q4)
         ]
         fig_bars = go.Figure(data=[
-            go.Bar(name=f'Q1-2026 ({q1_start} to {q1_end})', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#93C5FD'),
+            go.Bar(name=f'Q2-2026 ({q2_start} to {q2_end})', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#93C5FD'),
             go.Bar(name=f'Q4-2026 ({q4_start} to {q4_end})', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#1F497D')
         ])
         fig_bars.update_layout(barmode='group', height=400, margin=dict(l=20, r=20, t=30, b=40))
         st.plotly_chart(fig_bars, use_container_width=True)
 
     csv_data = comp_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download 2026 Q1 vs Q4 Comparison CSV", csv_data, "2026_q1_vs_q4_comparison.csv", "text/csv")
+    st.download_button("📥 Download 2026 Q2 vs Q4 Comparison CSV", csv_data, "2026_q2_vs_q4_comparison.csv", "text/csv")
 
-    with st.expander("📈 **View 2026 Day-by-Day Closure Velocity Comparison (Q1 vs Q4)**", expanded=False):
+    with st.expander("📈 **View 2026 Day-by-Day Closure Velocity Comparison (Q2 vs Q4)**", expanded=False):
         trend_analyzer = TrendAnalyzer()
         p26_daily_comp = trend_analyzer.compare_quarter_daily_trends(
-            tasks_q4, meta_q4, tasks_q1, meta_q1, holidays=cycle_mgr.holidays
+            tasks_q4, meta_q4, tasks_q2, meta_q2, holidays=cycle_mgr.holidays
         )
         if not p26_daily_comp.empty:
             col_v1, col_v2 = st.columns([3, 2])
@@ -881,13 +863,13 @@ elif page == "2026: Q1 vs Q4 Comparison":
                 ))
                 fig_v_bar.add_trace(go.Bar(
                     x=p26_daily_comp['Working Day'],
-                    y=p26_daily_comp["Q1-2026 Daily"],
-                    name="Q1-2026",
+                    y=p26_daily_comp["Q2-2026 Daily"],
+                    name="Q2-2026",
                     marker_color='#93C5FD'
                 ))
                 fig_v_bar.update_layout(
                     barmode='group',
-                    title="2026 Daily Closures: Q4 vs Q1 (Aligned by Working Day)",
+                    title="2026 Daily Closures: Q4 vs Q2 (Aligned by Working Day)",
                     height=340,
                     margin=dict(l=20, r=20, t=30, b=30),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -904,8 +886,8 @@ elif page == "2026: Q1 vs Q4 Comparison":
                 ))
                 fig_v_scurve.add_trace(go.Scatter(
                     x=p26_daily_comp['Working Day'],
-                    y=p26_daily_comp["Q1-2026 % Complete"],
-                    name="Q1-2026 % Complete",
+                    y=p26_daily_comp["Q2-2026 % Complete"],
+                    name="Q2-2026 % Complete",
                     line=dict(color='#3B82F6', width=2.5),
                     mode='lines+markers'
                 ))
@@ -925,18 +907,18 @@ elif page == "2026: Q1 vs Q4 Comparison":
                 st.download_button(
                     "📥 Download 2026 Daily Velocity Comparison CSV",
                     csv_p26_daily,
-                    "2026_q1_vs_q4_daily_velocity.csv",
+                    "2026_q2_vs_q4_daily_velocity.csv",
                     "text/csv"
                 )
         else:
-            st.info("No daily completion timestamps found for 2026 Q1 and Q4.")
+            st.info("No daily completion timestamps found for 2026 Q2 and Q4.")
 
 # -----------------------------------------------------------------------------
 # PAGE 4: 2025 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
-elif page == "2025: Q1 vs Q4 Comparison":
-    st.markdown('<div class="main-header">2025 Data Certification: Q1 vs Q4 Comparison</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q1-2025 and Q4-2025 — adjust or manually feed exact date frames below</div>', unsafe_allow_html=True)
+elif page == "2025: Q2 vs Q4 Comparison":
+    st.markdown('<div class="main-header">2025 Data Certification: Q2 vs Q4 Comparison</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Direct single-page comparative analysis between Q2-2025 (Spring) and Q4-2025 (Autumn) — adjust or manually feed exact date frames below</div>', unsafe_allow_html=True)
 
     with st.expander("⚙️ **Adjust Quarter Date Frames (Manual Dates or Presets)**", expanded=False):
         c_preset_25 = st.selectbox(
@@ -945,22 +927,22 @@ elif page == "2025: Q1 vs Q4 Comparison":
             index=0,
             key="preset_2025_page"
         )
-        d_sa25, d_ea25 = get_default_dates(2025, "Q1", c_preset_25)
+        d_sa25, d_ea25 = get_default_dates(2025, "Q2", c_preset_25)
         d_sb25, d_eb25 = get_default_dates(2025, "Q4", c_preset_25)
         c_d1, c_d2 = st.columns(2)
-        q1_25_start = c_d1.date_input("2025 Q1 Start Date", value=d_sa25, key="p25_q1_s")
-        q1_25_end = c_d1.date_input("2025 Q1 End Date", value=d_ea25, key="p25_q1_e")
-        q4_25_start = c_d2.date_input("2025 Q4 Start Date", value=d_sb25, key="p25_q4_s")
-        q4_25_end = c_d2.date_input("2025 Q4 End Date", value=d_eb25, key="p25_q4_e")
+        q2_25_start = c_d1.date_input("2025 Q2 Start Date (Spring)", value=d_sa25, key="p25_q2_s")
+        q2_25_end = c_d1.date_input("2025 Q2 End Date (Spring)", value=d_ea25, key="p25_q2_e")
+        q4_25_start = c_d2.date_input("2025 Q4 Start Date (Autumn)", value=d_sb25, key="p25_q4_s")
+        q4_25_end = c_d2.date_input("2025 Q4 End Date (Autumn)", value=d_eb25, key="p25_q4_e")
 
-    kpis_q1_25, tasks_q1_25, disc_q1_25, meta_q1_25 = get_quarter_kpis(tasks_df, disc_df, "Q1-2025", start_date=q1_25_start, end_date=q1_25_end)
+    kpis_q2_25, tasks_q2_25, disc_q2_25, meta_q2_25 = get_quarter_kpis(tasks_df, disc_df, "Q2-2025", start_date=q2_25_start, end_date=q2_25_end)
     kpis_q4_25, tasks_q4_25, disc_q4_25, meta_q4_25 = get_quarter_kpis(tasks_df, disc_df, "Q4-2025", start_date=q4_25_start, end_date=q4_25_end)
 
     # Date Matching & Audit Verification Banner
     st.markdown(f"""
     <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
         <span style="font-weight: 700; color: #1E293B;">🗓️ 2025 Date-Wise Audit & Verification:</span><br>
-        • <b>Q1-2025:</b> <code>{q1_25_start}</code> to <code>{q1_25_end}</code> ({meta_q1_25.get('total_working_days', 15)} working days) — <b>{len(tasks_q1_25):,}</b> tasks, <b>{len(disc_q1_25):,}</b> discrepancies<br>
+        • <b>Q2-2025:</b> <code>{q2_25_start}</code> to <code>{q2_25_end}</code> ({meta_q2_25.get('total_working_days', 15)} working days) — <b>{len(tasks_q2_25):,}</b> tasks, <b>{len(disc_q2_25):,}</b> discrepancies<br>
         • <b>Q4-2025:</b> <code>{q4_25_start}</code> to <code>{q4_25_end}</code> ({meta_q4_25.get('total_working_days', 14)} working days) — <b>{len(tasks_q4_25):,}</b> tasks, <b>{len(disc_q4_25):,}</b> discrepancies
     </div>
     """, unsafe_allow_html=True)
@@ -969,44 +951,44 @@ elif page == "2025: Q1 vs Q4 Comparison":
     min_avail = str(pd.to_datetime(tasks_df[date_col]).dt.date.min()) if date_col in tasks_df.columns else "N/A"
     max_avail = str(pd.to_datetime(tasks_df[date_col]).dt.date.max()) if date_col in tasks_df.columns else "N/A"
 
-    if len(tasks_q1_25) == 0:
-        st.warning(f"⚠️ Zero tasks found for Q1-2025 between `{q1_25_start}` and `{q1_25_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q1 start and end dates in the expander above.")
+    if len(tasks_q2_25) == 0:
+        st.warning(f"⚠️ Zero tasks found for Q2-2025 between `{q2_25_start}` and `{q2_25_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q2 start and end dates in the expander above.")
     if len(tasks_q4_25) == 0:
         st.warning(f"⚠️ Zero tasks found for Q4-2025 between `{q4_25_start}` and `{q4_25_end}`. (Your dataset has dates ranging from `{min_avail}` to `{max_avail}`). Adjust the Q4 start and end dates in the expander above.")
 
     # 4 Headline Delta Cards
     c1, c2, c3, c4 = st.columns(4)
-    v1_q1 = kpis_q1_25.get('kpi_1_certification_completion', {}).get('value')
+    v1_q2 = kpis_q2_25.get('kpi_1_certification_completion', {}).get('value')
     v1_q4 = kpis_q4_25.get('kpi_1_certification_completion', {}).get('value')
-    d1 = f"{(v1_q4 - v1_q1):+.1f}% vs Q1" if (v1_q1 is not None and v1_q4 is not None) else None
+    d1 = f"{(v1_q4 - v1_q2):+.1f}% vs Q2" if (v1_q2 is not None and v1_q4 is not None) else None
     c1.metric("Completion %", f"{v1_q4}%" if v1_q4 is not None else "N/A", delta=d1)
 
-    v2_q1 = kpis_q1_25.get('kpi_2_daily_closure_rate', {}).get('value')
+    v2_q2 = kpis_q2_25.get('kpi_2_daily_closure_rate', {}).get('value')
     v2_q4 = kpis_q4_25.get('kpi_2_daily_closure_rate', {}).get('value')
-    d2 = f"{(v2_q4 - v2_q1):+.2f} vs Q1" if (v2_q1 is not None and v2_q4 is not None) else None
+    d2 = f"{(v2_q4 - v2_q2):+.2f} vs Q2" if (v2_q2 is not None and v2_q4 is not None) else None
     c2.metric("Daily Closure Rate", f"{v2_q4} tasks/d" if v2_q4 is not None else "N/A", delta=d2)
 
-    v4_q1 = kpis_q1_25.get('kpi_4_avg_completion_time', {}).get('value')
+    v4_q2 = kpis_q2_25.get('kpi_4_avg_completion_time', {}).get('value')
     v4_q4 = kpis_q4_25.get('kpi_4_avg_completion_time', {}).get('value')
-    d4 = f"{(v4_q4 - v4_q1):+.2f}d vs Q1" if (v4_q1 is not None and v4_q4 is not None) else None
+    d4 = f"{(v4_q4 - v4_q2):+.2f}d vs Q2" if (v4_q2 is not None and v4_q4 is not None) else None
     c3.metric("Avg Completion Time", f"{v4_q4} days" if v4_q4 is not None else "N/A", delta=d4, delta_color="inverse")
 
-    v5_q1 = kpis_q1_25.get('kpi_5_discrepancy_rate', {}).get('value')
+    v5_q2 = kpis_q2_25.get('kpi_5_discrepancy_rate', {}).get('value')
     v5_q4 = kpis_q4_25.get('kpi_5_discrepancy_rate', {}).get('value')
-    d5 = f"{(v5_q4 - v5_q1):+.2f}% vs Q1" if (v5_q1 is not None and v5_q4 is not None) else None
+    d5 = f"{(v5_q4 - v5_q2):+.2f}% vs Q2" if (v5_q2 is not None and v5_q4 is not None) else None
     c4.metric("Discrepancy Rate", f"{v5_q4}%" if v5_q4 is not None else "N/A", delta=d5, delta_color="inverse")
 
     st.markdown("---")
     col_t, col_c = st.columns([3, 2])
     with col_t:
-        st.subheader("📋 2025 Q1 vs Q4 Side-by-Side KPI Matrix")
-        comp_rows = cycle_mgr.compare_metrics(kpis_q4_25, kpis_q1_25, mode="q4_vs_q1")
+        st.subheader("📋 2025 Q2 vs Q4 Side-by-Side KPI Matrix")
+        comp_rows = cycle_mgr.compare_metrics(kpis_q4_25, kpis_q2_25, mode="q4_vs_q2")
         rep_gen = ReportGenerator(meta_q4_25, app_mode=app_mode)
         comp_df = rep_gen.build_cycle_comparison_df(comp_rows)
         comp_df = comp_df.rename(columns={
             "Current Value": f"Q4-2025 ({q4_25_start} to {q4_25_end})",
-            "Previous Value": f"Q1-2025 ({q1_25_start} to {q1_25_end})",
-            "Absolute Change": "Delta (Q4 - Q1)"
+            "Previous Value": f"Q2-2025 ({q2_25_start} to {q2_25_end})",
+            "Absolute Change": "Delta (Q4 - Q2)"
         })
         comp_df = comp_df[~comp_df['Metric'].str.contains('Backlog Aging', na=False)]
         st.dataframe(
@@ -1019,26 +1001,26 @@ elif page == "2025: Q1 vs Q4 Comparison":
             hide_index=True
         )
     with col_c:
-        st.subheader("📊 Rate Metrics: 2025 Q1 vs Q4")
+        st.subheader("📊 Rate Metrics: 2025 Q2 vs Q4")
         rate_metrics = [
-            ("Completion %", v1_q1, v1_q4),
-            ("Data Accuracy %", kpis_q1_25.get('kpi_6_data_accuracy', {}).get('value'), kpis_q4_25.get('kpi_6_data_accuracy', {}).get('value')),
-            ("Discrepancy %", v5_q1, v5_q4)
+            ("Completion %", v1_q2, v1_q4),
+            ("Data Accuracy %", kpis_q2_25.get('kpi_6_data_accuracy', {}).get('value'), kpis_q4_25.get('kpi_6_data_accuracy', {}).get('value')),
+            ("Discrepancy %", v5_q2, v5_q4)
         ]
         fig_bars = go.Figure(data=[
-            go.Bar(name=f'Q1-2025 ({q1_25_start} to {q1_25_end})', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#FDE68A'),
+            go.Bar(name=f'Q2-2025 ({q2_25_start} to {q2_25_end})', x=[m[0] for m in rate_metrics], y=[m[1] or 0.0 for m in rate_metrics], marker_color='#FDE68A'),
             go.Bar(name=f'Q4-2025 ({q4_25_start} to {q4_25_end})', x=[m[0] for m in rate_metrics], y=[m[2] or 0.0 for m in rate_metrics], marker_color='#D97706')
         ])
         fig_bars.update_layout(barmode='group', height=400, margin=dict(l=20, r=20, t=30, b=40))
         st.plotly_chart(fig_bars, use_container_width=True)
 
     csv_data = comp_df.to_csv(index=False).encode('utf-8')
-    st.download_button("📥 Download 2025 Q1 vs Q4 Comparison CSV", csv_data, "2025_q1_vs_q4_comparison.csv", "text/csv")
+    st.download_button("📥 Download 2025 Q2 vs Q4 Comparison CSV", csv_data, "2025_q2_vs_q4_comparison.csv", "text/csv")
 
-    with st.expander("📈 **View 2025 Day-by-Day Closure Velocity Comparison (Q1 vs Q4)**", expanded=False):
+    with st.expander("📈 **View 2025 Day-by-Day Closure Velocity Comparison (Q2 vs Q4)**", expanded=False):
         trend_analyzer = TrendAnalyzer()
         p25_daily_comp = trend_analyzer.compare_quarter_daily_trends(
-            tasks_q4_25, meta_q4_25, tasks_q1_25, meta_q1_25, holidays=cycle_mgr.holidays
+            tasks_q4_25, meta_q4_25, tasks_q2_25, meta_q2_25, holidays=cycle_mgr.holidays
         )
         if not p25_daily_comp.empty:
             col_v1, col_v2 = st.columns([3, 2])
@@ -1052,13 +1034,13 @@ elif page == "2025: Q1 vs Q4 Comparison":
                 ))
                 fig_v_bar.add_trace(go.Bar(
                     x=p25_daily_comp['Working Day'],
-                    y=p25_daily_comp["Q1-2025 Daily"],
-                    name="Q1-2025",
+                    y=p25_daily_comp["Q2-2025 Daily"],
+                    name="Q2-2025",
                     marker_color='#FDE68A'
                 ))
                 fig_v_bar.update_layout(
                     barmode='group',
-                    title="2025 Daily Closures: Q4 vs Q1 (Aligned by Working Day)",
+                    title="2025 Daily Closures: Q4 vs Q2 (Aligned by Working Day)",
                     height=340,
                     margin=dict(l=20, r=20, t=30, b=30),
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -1075,8 +1057,8 @@ elif page == "2025: Q1 vs Q4 Comparison":
                 ))
                 fig_v_scurve.add_trace(go.Scatter(
                     x=p25_daily_comp['Working Day'],
-                    y=p25_daily_comp["Q1-2025 % Complete"],
-                    name="Q1-2025 % Complete",
+                    y=p25_daily_comp["Q2-2025 % Complete"],
+                    name="Q2-2025 % Complete",
                     line=dict(color='#F59E0B', width=2.5),
                     mode='lines+markers'
                 ))
@@ -1096,18 +1078,18 @@ elif page == "2025: Q1 vs Q4 Comparison":
                 st.download_button(
                     "📥 Download 2025 Daily Velocity Comparison CSV",
                     csv_p25_daily,
-                    "2025_q1_vs_q4_daily_velocity.csv",
+                    "2025_q2_vs_q4_daily_velocity.csv",
                     "text/csv"
                 )
         else:
-            st.info("No daily completion timestamps found for 2025 Q1 and Q4.")
+            st.info("No daily completion timestamps found for 2025 Q2 and Q4.")
 
 # -----------------------------------------------------------------------------
 # PAGE 4: ALL-QUARTERS OVERVIEW (8 QUARTERS: 2025 & 2026)
 # -----------------------------------------------------------------------------
 elif page == "All-Quarters Overview":
-    st.markdown('<div class="main-header">Annual 4-Quarter Overview (2025 & 2026)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Complete annual quarter tracking across all 4 quarters of 2025 and 2026 — select timeframe framing mode below</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">Annual Campaign Overview (2025 & 2026: Spring & Autumn)</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Multi-campaign performance tracking across all active certification campaigns (Spring: Q2 & Autumn: Q4) for 2025 & 2026</div>', unsafe_allow_html=True)
 
     col_m1, col_m2 = st.columns([2, 3])
     with col_m1:
@@ -1124,7 +1106,7 @@ elif page == "All-Quarters Overview":
     with col_m2:
         st.markdown("""
         <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-top: 4px;">
-            <b>🗓️ Corporate Campaign Alignment:</b> Q1 corresponds to the Spring Campaign (May 5–22, 2026 / Apr 7–25, 2025) and Q4 to the Autumn Campaign (Oct 5–23, 2026 / Oct 6–23, 2025). Q2 is aliased to Spring, and Q3 had no 2026 run.
+            <b>🗓️ Corporate Campaign Alignment:</b> The organization conducts two annual campaigns: Spring (Q2: May in 2026 / Apr in 2025) and Autumn (Q4: October in both years). All metrics reflect active campaign boundaries.
         </div>
         """, unsafe_allow_html=True)
 
@@ -1134,24 +1116,24 @@ elif page == "All-Quarters Overview":
         c1, c2 = st.columns(2)
         with c1:
             st.markdown("##### **2026 Campaign Dates**")
-            d_q1_26_s, d_q1_26_e = get_default_dates(2026, "Q1", preset_name)
+            d_q2_26_s, d_q2_26_e = get_default_dates(2026, "Q2", preset_name)
             d_q4_26_s, d_q4_26_e = get_default_dates(2026, "Q4", preset_name)
             col_a1, col_a2 = st.columns(2)
-            ov_26_q1_s = col_a1.date_input("2026 Q1 (Spring) Start", value=d_q1_26_s, key="ov_26_q1_s")
-            ov_26_q1_e = col_a2.date_input("2026 Q1 (Spring) End", value=d_q1_26_e, key="ov_26_q1_e")
+            ov_26_q2_s = col_a1.date_input("2026 Q2 (Spring) Start", value=d_q2_26_s, key="ov_26_q2_s")
+            ov_26_q2_e = col_a2.date_input("2026 Q2 (Spring) End", value=d_q2_26_e, key="ov_26_q2_e")
             ov_26_q4_s = col_a1.date_input("2026 Q4 (Autumn) Start", value=d_q4_26_s, key="ov_26_q4_s")
             ov_26_q4_e = col_a2.date_input("2026 Q4 (Autumn) End", value=d_q4_26_e, key="ov_26_q4_e")
         with c2:
             st.markdown("##### **2025 Campaign Dates**")
-            d_q1_25_s, d_q1_25_e = get_default_dates(2025, "Q1", preset_name)
+            d_q2_25_s, d_q2_25_e = get_default_dates(2025, "Q2", preset_name)
             d_q4_25_s, d_q4_25_e = get_default_dates(2025, "Q4", preset_name)
             col_b1, col_b2 = st.columns(2)
-            ov_25_q1_s = col_b1.date_input("2025 Q1 (Spring) Start", value=d_q1_25_s, key="ov_25_q1_s")
-            ov_25_q1_e = col_b2.date_input("2025 Q1 (Spring) End", value=d_q1_25_e, key="ov_25_q1_e")
+            ov_25_q2_s = col_b1.date_input("2025 Q2 (Spring) Start", value=d_q2_25_s, key="ov_25_q2_s")
+            ov_25_q2_e = col_b2.date_input("2025 Q2 (Spring) End", value=d_q2_25_e, key="ov_25_q2_e")
             ov_25_q4_s = col_b1.date_input("2025 Q4 (Autumn) Start", value=d_q4_25_s, key="ov_25_q4_s")
             ov_25_q4_e = col_b2.date_input("2025 Q4 (Autumn) End", value=d_q4_25_e, key="ov_25_q4_e")
 
-    target_quarters = ['Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025', 'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026']
+    target_quarters = ['Q2-2025', 'Q4-2025', 'Q2-2026', 'Q4-2026']
     
     kpi_metric_specs = [
         ('kpi_1_certification_completion', 'Certification Completion %', '%'),
@@ -1170,13 +1152,9 @@ elif page == "All-Quarters Overview":
 
     # Date mapping dictionary respecting manual overrides
     custom_dates = {
-        'Q1-2026': (ov_26_q1_s, ov_26_q1_e),
-        'Q2-2026': (ov_26_q1_s, ov_26_q1_e),
-        'Q3-2026': get_default_dates(2026, "Q3", preset_name),
+        'Q2-2026': (ov_26_q2_s, ov_26_q2_e),
         'Q4-2026': (ov_26_q4_s, ov_26_q4_e),
-        'Q1-2025': (ov_25_q1_s, ov_25_q1_e),
-        'Q2-2025': (ov_25_q1_s, ov_25_q1_e),
-        'Q3-2025': get_default_dates(2025, "Q3", preset_name),
+        'Q2-2025': (ov_25_q2_s, ov_25_q2_e),
         'Q4-2025': (ov_25_q4_s, ov_25_q4_e)
     }
 
@@ -1207,13 +1185,20 @@ elif page == "All-Quarters Overview":
                 else:
                     row[q] = "-"
             
-            # YoY change: Q4-2026 vs Q4-2025
-            v26 = quarterly_data['Q4-2026'].get(k_key, {}).get('value')
-            v25 = quarterly_data['Q4-2025'].get(k_key, {}).get('value')
-            if v26 is not None and v25 is not None and not pd.isna(v26) and not pd.isna(v25):
-                row['YoY Diff (Q4-26 vs Q4-25)'] = round(v26 - v25, 2)
+            # YoY change: Autumn (Q4-26 vs Q4-25) & Spring (Q2-26 vs Q2-25)
+            v4_26 = quarterly_data['Q4-2026'].get(k_key, {}).get('value')
+            v4_25 = quarterly_data['Q4-2025'].get(k_key, {}).get('value')
+            if v4_26 is not None and v4_25 is not None and not pd.isna(v4_26) and not pd.isna(v4_25):
+                row['YoY Autumn (Q4-26 vs Q4-25)'] = round(v4_26 - v4_25, 2)
             else:
-                row['YoY Diff (Q4-26 vs Q4-25)'] = "-"
+                row['YoY Autumn (Q4-26 vs Q4-25)'] = "-"
+
+            v2_26 = quarterly_data['Q2-2026'].get(k_key, {}).get('value')
+            v2_25 = quarterly_data['Q2-2025'].get(k_key, {}).get('value')
+            if v2_26 is not None and v2_25 is not None and not pd.isna(v2_26) and not pd.isna(v2_25):
+                row['YoY Spring (Q2-26 vs Q2-25)'] = round(v2_26 - v2_25, 2)
+            else:
+                row['YoY Spring (Q2-26 vs Q2-25)'] = "-"
             matrix_rows.append(row)
 
         dyn_matrix_df = pd.DataFrame(matrix_rows)
@@ -1233,7 +1218,7 @@ elif page == "All-Quarters Overview":
         st.dataframe(dyn_matrix_df, use_container_width=True, height=450, hide_index=True)
 
         csv_data = dyn_matrix_df.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download 8-Quarter Overview CSV", csv_data, f"all_quarters_overview_{preset_name.lower().replace(' ', '_')}.csv", "text/csv")
+        st.download_button("📥 Download Campaigns Overview CSV", csv_data, f"campaigns_overview_{preset_name.lower().replace(' ', '_')}.csv", "text/csv")
     else:
         all_q_df = load_report_csv("all_quarters_comparison")
         if all_q_df is not None and not all_q_df.empty:
@@ -1374,9 +1359,9 @@ elif page == "Daily Performance":
                 "Quarter Comparison Scope:",
                 [
                     "Q4-2026 vs Q4-2025 (Autumn YoY)",
-                    "Q1-2026 vs Q1-2025 (Spring YoY)",
-                    "2026: Q1 vs Q4 (Intra-Year)",
-                    "2025: Q1 vs Q4 (Intra-Year)",
+                    "Q2-2026 vs Q2-2025 (Spring YoY)",
+                    "2026: Q2 vs Q4 (Spring vs Autumn)",
+                    "2025: Q2 vs Q4 (Spring vs Autumn)",
                     "Custom Quarter Pair (Manual Dates)"
                 ],
                 index=0,
@@ -1395,16 +1380,16 @@ elif page == "Daily Performance":
             def_qa_name, def_qb_name = "Q4-2026", "Q4-2025"
             def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
             def_qb_start, def_qb_end = date(2025, 10, 6), date(2025, 10, 23)
-        elif comp_preset == "Q1-2026 vs Q1-2025 (Spring YoY)":
-            def_qa_name, def_qb_name = "Q1-2026", "Q1-2025"
+        elif comp_preset == "Q2-2026 vs Q2-2025 (Spring YoY)":
+            def_qa_name, def_qb_name = "Q2-2026", "Q2-2025"
             def_qa_start, def_qa_end = date(2026, 5, 5), date(2026, 5, 22)
             def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
-        elif comp_preset == "2026: Q1 vs Q4 (Intra-Year)":
-            def_qa_name, def_qb_name = "Q4-2026", "Q1-2026"
+        elif comp_preset == "2026: Q2 vs Q4 (Spring vs Autumn)":
+            def_qa_name, def_qb_name = "Q4-2026", "Q2-2026"
             def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
             def_qb_start, def_qb_end = date(2026, 5, 5), date(2026, 5, 22)
-        elif comp_preset == "2025: Q1 vs Q4 (Intra-Year)":
-            def_qa_name, def_qb_name = "Q4-2025", "Q1-2025"
+        elif comp_preset == "2025: Q2 vs Q4 (Spring vs Autumn)":
+            def_qa_name, def_qb_name = "Q4-2025", "Q2-2025"
             def_qa_start, def_qa_end = date(2025, 10, 6), date(2025, 10, 23)
             def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
         else: # Custom
@@ -1417,7 +1402,7 @@ elif page == "Daily Performance":
             with col_c_left:
                 st.markdown("##### **Quarter A (Primary / Baseline)**")
                 qa_yr = st.selectbox("Year A", [2026, 2025], index=0 if "2026" in def_qa_name else 1, key="daily_qa_yr")
-                qa_q = st.selectbox("Quarter A", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_qa_name.split("-")[0]), key="daily_qa_q")
+                qa_q = st.selectbox("Quarter A", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_qa_name.split("-")[0] if def_qa_name.split("-")[0] in ["Q2", "Q4"] else "Q4"), key="daily_qa_q")
                 qa_name = f"{qa_q}-{qa_yr}"
                 d_qa1, d_qa2 = st.columns(2)
                 qa_start = d_qa1.date_input("Start Date A", value=def_qa_start, key="daily_qa_s")
@@ -1426,7 +1411,7 @@ elif page == "Daily Performance":
             with col_c_right:
                 st.markdown("##### **Quarter B (Comparison / Prior)**")
                 qb_yr = st.selectbox("Year B", [2026, 2025], index=1 if "2025" in def_qb_name else 0, key="daily_qb_yr")
-                qb_q = st.selectbox("Quarter B", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_qb_name.split("-")[0]), key="daily_qb_q")
+                qb_q = st.selectbox("Quarter B", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_qb_name.split("-")[0] if def_qb_name.split("-")[0] in ["Q2", "Q4"] else "Q4"), key="daily_qb_q")
                 qb_name = f"{qb_q}-{qb_yr}"
                 d_qb1, d_qb2 = st.columns(2)
                 qb_start = d_qb1.date_input("Start Date B", value=def_qb_start, key="daily_qb_s")

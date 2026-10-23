@@ -25,8 +25,10 @@ class CycleManager:
             'final_deadline': '2026-10-23'
         })
         self.previous_cycle = self.config.get('previous_cycle', {
-            'name': 'Q1-2026',
+            'name': 'Q2-2026',
             'quarter_label': 'May 5 - May 22, 2026',
+            'year': 2026,
+            'quarter': 2,
             'start_date': '2026-05-05',
             'end_date': '2026-05-22',
             'final_deadline': '2026-05-22'
@@ -70,7 +72,7 @@ class CycleManager:
         return {'name': name, 'start_date': '2026-10-01', 'end_date': '2026-12-31', 'final_deadline': '2026-12-23'}
 
     def assign_cycle_to_dataframe(self, df: pd.DataFrame, date_col: str = 'sys_created_on') -> pd.DataFrame:
-        """Assigns quarter cycle name (e.g. Q1-2025, Q4-2025, Q1-2026, Q4-2026) based on timestamp."""
+        """Assigns quarter cycle name (e.g. Q2-2025, Q4-2025, Q2-2026, Q4-2026) based on timestamp."""
         if df is None or df.empty:
             return df
             
@@ -98,21 +100,17 @@ class CycleManager:
             if date(2026, 10, 5) <= d <= date(2026, 10, 23):
                 return 'Q4-2026'
 
-            # Q1 2026 / Q2 2026: May 5 - May 22, 2026
+            # Q2 2026 (Spring): May 5 - May 22, 2026
             if date(2026, 5, 5) <= d <= date(2026, 5, 22):
-                return 'Q1-2026'
+                return 'Q2-2026'
 
             # Q4 2025: Oct 6 - Oct 23, 2025
             if date(2025, 10, 6) <= d <= date(2025, 10, 23):
                 return 'Q4-2025'
 
-            # Q1 2025 / Q2 2025: Apr 7 - Apr 25, 2025
+            # Q2 2025 (Spring): Apr 7 - Apr 25, 2025
             if date(2025, 4, 7) <= d <= date(2025, 4, 25):
-                return 'Q1-2025'
-
-            # Demo / test synthetic data support: July 2026
-            if d.year == 2026 and d.month == 7:
-                return 'Q3-2026'
+                return 'Q2-2025'
 
             # Check configured cycle boundaries in self.cycles
             for c_name, c_info in self.cycles.items():

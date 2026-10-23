@@ -10,58 +10,51 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
     Generates realistic synthetic datasets for certification performance analysis.
     Reflects the exact business requirements across all defined annual campaign quarters:
     - Q4-2026: Oct 5 - Oct 23, 2026 (5,200 tasks, ~97% completion, ~96% on-time, ~8% discrepancy)
-    - Q1-2026: May 5 - May 22, 2026 (5,000 tasks, ~95% completion, ~91% on-time, ~12% discrepancy)
+    - Q2-2026: May 5 - May 22, 2026 (5,000 tasks, ~95% completion, ~91% on-time, ~12% discrepancy)
     - Q4-2025: Oct 6 - Oct 23, 2025 (4,800 tasks, ~94% completion, ~90% on-time, ~13% discrepancy)
-    - Q1-2025: Apr 7 - Apr 25, 2025 (4,600 tasks, ~92% completion, ~88% on-time, ~15% discrepancy)
-    - Q3-2026: Jul 1 - Jul 31, 2026 (5,000 tasks, ~95% completion, ~91% on-time, ~12% discrepancy)
+    - Q2-2025: Apr 7 - Apr 25, 2025 (4,600 tasks, ~92% completion, ~88% on-time, ~15% discrepancy)
     Includes multiple applications, 25 certifiers, various issue categories, open & overdue backlogs, and near-deadline tasks.
     """
     os.makedirs(output_dir, exist_ok=True)
     random.seed(42)
     np.random.seed(42)
 
-    cycles = ['Q4-2026', 'Q1-2026', 'Q4-2025', 'Q1-2025', 'Q3-2026']
+    cycles = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
     num_tasks = {
         'Q4-2026': 5200,
-        'Q1-2026': 5000,
+        'Q2-2026': 5000,
         'Q4-2025': 4800,
-        'Q1-2025': 4600,
-        'Q3-2026': 5000
+        'Q2-2025': 4600
     }
     discrepancy_rates = {
         'Q4-2026': 0.08,
-        'Q1-2026': 0.12,
+        'Q2-2026': 0.12,
         'Q4-2025': 0.13,
-        'Q1-2025': 0.15,
-        'Q3-2026': 0.12
+        'Q2-2025': 0.15
     }
     rework_rates = {
         'Q4-2026': 0.03,
-        'Q1-2026': 0.06,
+        'Q2-2026': 0.06,
         'Q4-2025': 0.07,
-        'Q1-2025': 0.08,
-        'Q3-2026': 0.06
+        'Q2-2025': 0.08
     }
     completion_rates = {
         'Q4-2026': 0.97,
-        'Q1-2026': 0.95,
+        'Q2-2026': 0.95,
         'Q4-2025': 0.94,
-        'Q1-2025': 0.92,
-        'Q3-2026': 0.95
+        'Q2-2025': 0.92
     }
     on_time_rates = {
         'Q4-2026': 0.96,
-        'Q1-2026': 0.91,
+        'Q2-2026': 0.91,
         'Q4-2025': 0.90,
-        'Q1-2025': 0.88,
-        'Q3-2026': 0.91
+        'Q2-2025': 0.88
     }
     avg_days_map = {
         'Q4-2026': 6,
-        'Q1-2026': 8,
+        'Q2-2026': 8,
         'Q4-2025': 8,
-        'Q1-2025': 9,
-        'Q3-2026': 8
+        'Q2-2025': 9
     }
 
     applications = [
@@ -75,26 +68,23 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
     
     base_dates = {
         'Q4-2026': datetime(2026, 10, 5),
-        'Q1-2026': datetime(2026, 5, 5),
+        'Q2-2026': datetime(2026, 5, 5),
         'Q4-2025': datetime(2025, 10, 6),
-        'Q1-2025': datetime(2025, 4, 7),
-        'Q3-2026': datetime(2026, 7, 1)
+        'Q2-2025': datetime(2025, 4, 7)
     }
 
     cycle_deadlines = {
         'Q4-2026': datetime(2026, 10, 23),
-        'Q1-2026': datetime(2026, 5, 22),
+        'Q2-2026': datetime(2026, 5, 22),
         'Q4-2025': datetime(2025, 10, 23),
-        'Q1-2025': datetime(2025, 4, 25),
-        'Q3-2026': datetime(2026, 7, 31)
+        'Q2-2025': datetime(2025, 4, 25)
     }
 
     max_creation_days = {
         'Q4-2026': 14,
-        'Q1-2026': 13,
+        'Q2-2026': 13,
         'Q4-2025': 13,
-        'Q1-2025': 14,
-        'Q3-2026': 15
+        'Q2-2025': 14
     }
 
     tasks_data = []

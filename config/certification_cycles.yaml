@@ -1,10 +1,10 @@
 # ==============================================================================
 # CERTIFICATION CYCLES CONFIGURATION
-# Defined quarters: Date-wise campaign processing as specified:
-# Q4 2026: Oct 5 - Oct 23, 2026
-# Q2 2026 / Q1 2026: May 5 - May 22, 2026
-# Q4 2025: Oct 6 - Oct 23, 2025
-# Q2 2025 / Q1 2025: Apr 7 - Apr 25, 2025
+# Defined non-overlapping campaign quarters:
+# Q4 2026: Oct 5 - Oct 23, 2026 (Autumn Campaign)
+# Q2 2026: May 5 - May 22, 2026 (Spring Campaign)
+# Q4 2025: Oct 6 - Oct 23, 2025 (Autumn Campaign)
+# Q2 2025: Apr 7 - Apr 25, 2025 (Spring Campaign)
 # ==============================================================================
 
 cycles:
@@ -17,29 +17,11 @@ cycles:
     end_date: "2026-10-23"
     final_deadline: "2026-10-23"
 
-  Q3-2026:
-    name: "Q3-2026"
-    quarter_label: "Jul 1 - Jul 31, 2026"
-    year: 2026
-    quarter: 3
-    start_date: "2026-07-01"
-    end_date: "2026-07-31"
-    final_deadline: "2026-07-23"
-
   Q2-2026:
     name: "Q2-2026"
     quarter_label: "May 5 - May 22, 2026"
     year: 2026
     quarter: 2
-    start_date: "2026-05-05"
-    end_date: "2026-05-22"
-    final_deadline: "2026-05-22"
-
-  Q1-2026:
-    name: "Q1-2026"
-    quarter_label: "May 5 - May 22, 2026"
-    year: 2026
-    quarter: 1
     start_date: "2026-05-05"
     end_date: "2026-05-22"
     final_deadline: "2026-05-22"
@@ -53,29 +35,11 @@ cycles:
     end_date: "2025-10-23"
     final_deadline: "2025-10-23"
 
-  Q3-2025:
-    name: "Q3-2025"
-    quarter_label: "Jul 1 - Sep 30, 2025"
-    year: 2025
-    quarter: 3
-    start_date: "2025-07-01"
-    end_date: "2025-09-30"
-    final_deadline: "2025-09-23"
-
   Q2-2025:
     name: "Q2-2025"
     quarter_label: "Apr 7 - Apr 25, 2025"
     year: 2025
     quarter: 2
-    start_date: "2025-04-07"
-    end_date: "2025-04-25"
-    final_deadline: "2025-04-25"
-
-  Q1-2025:
-    name: "Q1-2025"
-    quarter_label: "Apr 7 - Apr 25, 2025"
-    year: 2025
-    quarter: 1
     start_date: "2025-04-07"
     end_date: "2025-04-25"
     final_deadline: "2025-04-25"
@@ -90,10 +54,10 @@ current_cycle:
   final_deadline: "2026-10-23"
 
 previous_cycle:
-  name: "Q1-2026"
+  name: "Q2-2026"
   quarter_label: "May 5 - May 22, 2026"
   year: 2026
-  quarter: 1
+  quarter: 2
   start_date: "2026-05-05"
   end_date: "2026-05-22"
   final_deadline: "2026-05-22"

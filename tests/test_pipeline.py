@@ -86,7 +86,7 @@ def test_report_generator_slice_no_warning():
         "u_certification_task": ["TASK1", "TASK2"],
         "category": ["A", "B"],
         "status": ["Open", "Closed"],
-        "certification_cycle": ["Q4-2026", "Q1-2026"]
+        "certification_cycle": ["Q4-2026", "Q2-2026"]
     })
     # Create a slice from DataFrame
     sliced_df = full_df[full_df["certification_cycle"] == "Q4-2026"]
