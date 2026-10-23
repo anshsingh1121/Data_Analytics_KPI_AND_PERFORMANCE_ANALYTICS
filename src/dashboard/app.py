@@ -461,27 +461,27 @@ if page == "Executive Overview":
     
     k1 = kpis['kpi_1_certification_completion']
     p1 = prev_kpis['kpi_1_certification_completion']
-    d1 = f"{(k1['value'] - p1['value']):+.1f}% vs prev" if (k1['value'] and p1['value']) else None
+    d1 = f"{(k1['value'] - p1['value']):+.1f}% vs prev" if (k1.get('value') is not None and p1.get('value') is not None) else None
     col1.metric("Completion %", f"{k1['value']}%", delta=d1)
 
     k2 = kpis['kpi_2_daily_closure_rate']
     p2 = prev_kpis['kpi_2_daily_closure_rate']
-    d2 = f"{(k2['value'] - p2['value']):+.1f} vs prev" if (k2['value'] and p2['value']) else None
+    d2 = f"{(k2['value'] - p2['value']):+.1f} vs prev" if (k2.get('value') is not None and p2.get('value') is not None) else None
     col2.metric("Daily Closure Rate", f"{k2['value']}", delta=d2)
 
     k3 = kpis['kpi_3_on_time_completion']
     p3 = prev_kpis['kpi_3_on_time_completion']
-    d3 = f"{(k3['value'] - p3['value']):+.1f}% vs prev" if (k3['value'] and p3['value']) else None
+    d3 = f"{(k3['value'] - p3['value']):+.1f}% vs prev" if (k3.get('value') is not None and p3.get('value') is not None) else None
     col3.metric("On-Time Completion", f"{k3['value']}%", delta=d3)
 
     k5 = kpis['kpi_5_discrepancy_rate']
     p5 = prev_kpis['kpi_5_discrepancy_rate']
-    d5 = f"{(k5['value'] - p5['value']):+.1f}% vs prev" if (k5['value'] and p5['value']) else None
+    d5 = f"{(k5['value'] - p5['value']):+.1f}% vs prev" if (k5.get('value') is not None and p5.get('value') is not None) else None
     col4.metric("Discrepancy Rate", f"{k5['value']}%", delta=d5, delta_color="inverse")
 
     k4 = kpis['kpi_4_avg_completion_time']
     p4 = prev_kpis['kpi_4_avg_completion_time']
-    d4 = f"{(k4['value'] - p4['value']):+.1f}d vs prev" if (k4['value'] and p4['value']) else None
+    d4 = f"{(k4['value'] - p4['value']):+.1f}d vs prev" if (k4.get('value') is not None and p4.get('value') is not None) else None
     col5.metric("Avg Completion Time", f"{k4['value']} days", delta=d4, delta_color="inverse")
 
     st.markdown("---")
@@ -497,8 +497,9 @@ if page == "Executive Overview":
         # Daily closure trend chart
         st.subheader("Daily Closures Trend")
         closed_col = 'closed_at' if 'closed_at' in c_tasks.columns else 'completed_at'
-        if closed_col in c_tasks.columns:
-            completed_tasks = c_tasks[c_tasks['state'].isin(['Closed Complete', 'Closed Incomplete'])].copy()
+        state_col = 'state' if 'state' in c_tasks.columns else ('status' if 'status' in c_tasks.columns else None)
+        if closed_col in c_tasks.columns and state_col:
+            completed_tasks = c_tasks[c_tasks[state_col].isin(['Closed Complete', 'Closed Incomplete'])].copy()
             completed_tasks['date'] = pd.to_datetime(completed_tasks[closed_col], errors='coerce').dt.date
             daily_series = completed_tasks.groupby('date').size().reset_index(name='Closures')
             daily_series = daily_series.sort_values('date')
@@ -510,7 +511,8 @@ if page == "Executive Overview":
     with c_right:
         st.subheader("Operational Risk Summary")
         monitor = DeadlineMonitor(warning_window_days=1)
-        risk_data = monitor.monitor(c_tasks, as_of_date='2026-10-23')
+        as_of_target = curr_meta.get('end_date', '2026-10-23')
+        risk_data = monitor.monitor(c_tasks, as_of_date=as_of_target)
         sum_data = risk_data.get('summary', {})
 
         st.markdown(f"""
@@ -1113,7 +1115,8 @@ elif page == "Backlog & SLA Monitoring":
     st.markdown('<div class="sub-header">Active backlog tasks, aging buckets, overdue tasks, and near-deadline (≤1d) SLA alerts</div>', unsafe_allow_html=True)
 
     monitor = DeadlineMonitor(warning_window_days=1)
-    alerts = monitor.monitor(c_tasks, as_of_date='2026-10-23')
+    as_of_target = curr_meta.get('end_date', '2026-10-23')
+    alerts = monitor.monitor(c_tasks, as_of_date=as_of_target)
     sum_data = alerts.get('summary', {})
 
     col1, col2, col3, col4 = st.columns(4)

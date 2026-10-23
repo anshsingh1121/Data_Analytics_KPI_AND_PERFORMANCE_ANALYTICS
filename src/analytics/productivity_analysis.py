@@ -9,15 +9,17 @@ class ProductivityAnalyzer:
 
     def analyze(self, tasks_df: pd.DataFrame, working_days: int) -> pd.DataFrame:
         """Returns a DataFrame with certifier productivity stats."""
-        if tasks_df.empty or 'assigned_to' not in tasks_df.columns:
+        cert_col = 'assigned_to' if 'assigned_to' in tasks_df.columns else ('certifier' if 'certifier' in tasks_df.columns else None)
+        if tasks_df.empty or not cert_col:
             return pd.DataFrame()
             
         # Total assigned
-        assigned = tasks_df.groupby('assigned_to').size().rename('total_assigned')
+        assigned = tasks_df.groupby(cert_col).size().rename('total_assigned')
         
         # Completed
-        completed_mask = tasks_df['state'].isin(["Closed Complete"])
-        completed = tasks_df[completed_mask].groupby('assigned_to').size().rename('total_completed')
+        state_col = 'state' if 'state' in tasks_df.columns else ('status' if 'status' in tasks_df.columns else None)
+        completed_mask = tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"]) if state_col else pd.Series(False, index=tasks_df.index)
+        completed = tasks_df[completed_mask].groupby(cert_col).size().rename('total_completed')
         
         # Combine
         prod_df = pd.concat([assigned, completed], axis=1).fillna(0)

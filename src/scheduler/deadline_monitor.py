@@ -26,11 +26,13 @@ class DeadlineMonitor:
             logger.info("DeadlineMonitor: No tasks in scope.")
             return {"overdue_tasks": [], "near_deadline_tasks": [], "summary": {"overdue": 0, "near_deadline": 0, "total_open": 0}}
 
-        state_col = 'state' if 'state' in tasks_df.columns else 'status'
-        due_col = 'due_date' if 'due_date' in tasks_df.columns else None
-        num_col = 'number' if 'number' in tasks_df.columns else 'sys_id'
-        assignee_col = 'assigned_to' if 'assigned_to' in tasks_df.columns else 'certifier'
-        app_col = 'cmdb_ci' if 'cmdb_ci' in tasks_df.columns else 'application'
+        state_col = 'state' if 'state' in tasks_df.columns else ('status' if 'status' in tasks_df.columns else None)
+        if not state_col:
+            return {"overdue_tasks": [], "near_deadline_tasks": [], "summary": {"overdue": 0, "near_deadline": 0, "total_open": 0}}
+        due_col = 'due_date' if 'due_date' in tasks_df.columns else ('u_due_date' if 'u_due_date' in tasks_df.columns else None)
+        num_col = 'number' if 'number' in tasks_df.columns else ('sys_id' if 'sys_id' in tasks_df.columns else tasks_df.columns[0])
+        assignee_col = 'assigned_to' if 'assigned_to' in tasks_df.columns else ('certifier' if 'certifier' in tasks_df.columns else None)
+        app_col = 'business_service' if 'business_service' in tasks_df.columns else ('cmdb_ci' if 'cmdb_ci' in tasks_df.columns else ('application' if 'application' in tasks_df.columns else None))
 
         open_statuses = ["Open", "Work in Progress", "Pending Review", "Pending"]
         open_tasks = tasks_df[tasks_df[state_col].isin(open_statuses)].copy()
@@ -59,8 +61,8 @@ class DeadlineMonitor:
                 records.append({
                     "task_id": str(r[num_col]),
                     "due_date": str(r['due_dt'].date()),
-                    "application": str(r[app_col]) if app_col in r else "N/A",
-                    "assigned_to": str(r[assignee_col]) if assignee_col in r else "N/A",
+                    "application": str(r[app_col]) if (app_col and app_col in r) else "N/A",
+                    "assigned_to": str(r[assignee_col]) if (assignee_col and assignee_col in r) else "N/A",
                     "status": str(r[state_col]),
                     extra_col: r[extra_col],
                     "risk_level": r['Risk Level']
