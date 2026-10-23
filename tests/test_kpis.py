@@ -4,6 +4,7 @@ import numpy as np
 from datetime import datetime
 from src.analytics.kpi_engine import KPIEngine
 from src.analytics.cycle_manager import CycleManager
+from src.analytics.trend_analysis import TrendAnalyzer
 
 def test_all_12_kpis(mock_tasks_df, mock_discrepancies_df):
     """Verifies that all 12 KPIs calculate correctly on test data."""
@@ -192,3 +193,64 @@ def test_working_days_calculation():
     # Thursday Oct 1 to Friday Oct 2 (holiday): 1 working day (Oct 1 only)
     days_hol = cm.calculate_working_days('2026-10-01', '2026-10-02')
     assert days_hol == 1
+
+def test_working_day_daily_series():
+    """Verifies build_working_day_daily_series correctly aligns closures by working day index."""
+    ta = TrendAnalyzer()
+    tasks_data = {
+        'sys_id': ['T1', 'T2', 'T3', 'T4', 'T5'],
+        'state': ['Closed Complete', 'Closed Complete', 'Closed Complete', 'Open', 'Closed Incomplete'],
+        'closed_at': [
+            '2026-10-05 10:00:00', # Monday (Day 1)
+            '2026-10-06 11:00:00', # Tuesday (Day 2)
+            '2026-10-06 14:00:00', # Tuesday (Day 2)
+            None,
+            '2026-10-07 09:00:00'  # Wednesday (Day 3)
+        ]
+    }
+    df = pd.DataFrame(tasks_data)
+    daily_s = ta.build_working_day_daily_series(df, '2026-10-05', '2026-10-09')
+    assert len(daily_s) == 5
+    assert list(daily_s['working_day']) == ['Day 1', 'Day 2', 'Day 3', 'Day 4', 'Day 5']
+    assert daily_s.loc[daily_s['working_day'] == 'Day 1', 'daily_closures'].iloc[0] == 1
+    assert daily_s.loc[daily_s['working_day'] == 'Day 2', 'daily_closures'].iloc[0] == 2
+    assert daily_s.loc[daily_s['working_day'] == 'Day 3', 'daily_closures'].iloc[0] == 1
+    assert daily_s.loc[daily_s['working_day'] == 'Day 4', 'daily_closures'].iloc[0] == 0
+    # Cumulative total should reach 4 completed tasks (out of 5 total tasks = 80%)
+    assert daily_s.iloc[-1]['cumulative_closures'] == 4
+    assert daily_s.iloc[-1]['cumulative_pct'] == 80.0
+
+def test_compare_quarter_daily_trends():
+    """Verifies compare_quarter_daily_trends produces aligned comparison with deltas and pace leader."""
+    ta = TrendAnalyzer()
+    df_a = pd.DataFrame({
+        'sys_id': ['A1', 'A2', 'A3', 'A4'],
+        'state': ['Closed Complete', 'Closed Complete', 'Closed Complete', 'Closed Complete'],
+        'closed_at': ['2026-10-05', '2026-10-06', '2026-10-06', '2026-10-07']
+    })
+    meta_a = {'name': 'Q4-2026', 'start_date': '2026-10-05', 'end_date': '2026-10-07'}
+
+    df_b = pd.DataFrame({
+        'sys_id': ['B1', 'B2', 'B3', 'B4'],
+        'state': ['Closed Complete', 'Closed Complete', 'Closed Complete', 'Closed Complete'],
+        'closed_at': ['2025-10-06', '2025-10-07', '2025-10-08', '2025-10-09']
+    })
+    meta_b = {'name': 'Q4-2025', 'start_date': '2025-10-06', 'end_date': '2025-10-09'}
+
+    comp_df = ta.compare_quarter_daily_trends(df_a, meta_a, df_b, meta_b)
+    assert not comp_df.empty
+    # Length should match max days between A (3 days) and B (4 days) = 4
+    assert len(comp_df) == 4
+    assert 'Working Day' in comp_df.columns
+    assert 'Q4-2026 Daily' in comp_df.columns
+    assert 'Q4-2025 Daily' in comp_df.columns
+    assert 'Daily Delta (Q4-2026 - Q4-2025)' in comp_df.columns
+    assert 'Cumulative Delta (Q4-2026 - Q4-2025)' in comp_df.columns
+    assert 'Pace Leader' in comp_df.columns
+    # Day 1: A has 1, B has 1 -> Tied
+    assert comp_df.loc[comp_df['Working Day'] == 'Day 1', 'Pace Leader'].iloc[0] == 'Tied'
+    # Day 2: A has 3 cumulative (75%), B has 2 cumulative (50%) -> Q4-2026 leads
+    assert comp_df.loc[comp_df['Working Day'] == 'Day 2', 'Pace Leader'].iloc[0] == 'Q4-2026'
+    # Day 4: A holds 4 cumulative (100%), B finishes with 4 cumulative (100%) -> Tied
+    assert comp_df.loc[comp_df['Working Day'] == 'Day 4', 'Pace Leader'].iloc[0] == 'Tied'
+

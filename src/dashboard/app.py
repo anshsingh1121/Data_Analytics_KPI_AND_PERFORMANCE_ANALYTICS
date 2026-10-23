@@ -11,9 +11,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from datetime import date, datetime, timedelta
+
 from src.config.loader import ConfigLoader
 from src.analytics.kpi_engine import KPIEngine
 from src.analytics.cycle_manager import CycleManager
+from src.analytics.trend_analysis import TrendAnalyzer
 from src.scheduler.deadline_monitor import DeadlineMonitor
 from src.reporting.report_generator import ReportGenerator
 from src.storage.run_history import RunHistory
@@ -690,6 +693,73 @@ elif page == "Compare Any 2 Quarters (Manual Dates)":
     csv_data = comp_df.to_csv(index=False).encode('utf-8')
     st.download_button(f"📥 Download {qa_choice} vs {qb_choice} Comparison CSV", csv_data, f"comparison_{qa_name}_vs_{qb_name}.csv", "text/csv")
 
+    with st.expander(f"📈 **View Day-by-Day Closure Velocity Comparison ({qa_name} vs {qb_name})**", expanded=False):
+        trend_analyzer = TrendAnalyzer()
+        page_daily_comp = trend_analyzer.compare_quarter_daily_trends(
+            tasks_a, meta_a, tasks_b, meta_b, holidays=cycle_mgr.holidays
+        )
+        if not page_daily_comp.empty:
+            col_v1, col_v2 = st.columns([3, 2])
+            with col_v1:
+                fig_v_bar = go.Figure()
+                fig_v_bar.add_trace(go.Bar(
+                    x=page_daily_comp['Working Day'],
+                    y=page_daily_comp[f"{qa_name} Daily"],
+                    name=f"{qa_name}",
+                    marker_color='#93C5FD'
+                ))
+                fig_v_bar.add_trace(go.Bar(
+                    x=page_daily_comp['Working Day'],
+                    y=page_daily_comp[f"{qb_name} Daily"],
+                    name=f"{qb_name}",
+                    marker_color='#1F497D'
+                ))
+                fig_v_bar.update_layout(
+                    barmode='group',
+                    title=f"Daily Closures (Working Day 1 to N)",
+                    height=340,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_bar, use_container_width=True)
+
+                fig_v_scurve = go.Figure()
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=page_daily_comp['Working Day'],
+                    y=page_daily_comp[f"{qa_name} % Complete"],
+                    name=f"{qa_name} % Complete",
+                    line=dict(color='#3B82F6', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=page_daily_comp['Working Day'],
+                    y=page_daily_comp[f"{qb_name} % Complete"],
+                    name=f"{qb_name} % Complete",
+                    line=dict(color='#1F497D', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.update_layout(
+                    title="Cumulative Completion S-Curve (%)",
+                    yaxis=dict(ticksuffix="%", range=[0, 105]),
+                    height=280,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_scurve, use_container_width=True)
+
+            with col_v2:
+                st.markdown("##### Day-by-Day Comparative Matrix")
+                st.dataframe(page_daily_comp, use_container_width=True, height=620, hide_index=True)
+                csv_p_daily = page_daily_comp.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    f"📥 Download Daily Velocity CSV ({qa_choice} vs {qb_choice})",
+                    csv_p_daily,
+                    f"daily_velocity_{qa_name}_vs_{qb_name}.csv",
+                    "text/csv"
+                )
+        else:
+            st.info("No daily completion timestamps found for the selected quarter dates.")
+
 # -----------------------------------------------------------------------------
 # PAGE 3: 2026 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
@@ -794,6 +864,73 @@ elif page == "2026: Q1 vs Q4 Comparison":
     csv_data = comp_df.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download 2026 Q1 vs Q4 Comparison CSV", csv_data, "2026_q1_vs_q4_comparison.csv", "text/csv")
 
+    with st.expander("📈 **View 2026 Day-by-Day Closure Velocity Comparison (Q1 vs Q4)**", expanded=False):
+        trend_analyzer = TrendAnalyzer()
+        p26_daily_comp = trend_analyzer.compare_quarter_daily_trends(
+            tasks_q4, meta_q4, tasks_q1, meta_q1, holidays=cycle_mgr.holidays
+        )
+        if not p26_daily_comp.empty:
+            col_v1, col_v2 = st.columns([3, 2])
+            with col_v1:
+                fig_v_bar = go.Figure()
+                fig_v_bar.add_trace(go.Bar(
+                    x=p26_daily_comp['Working Day'],
+                    y=p26_daily_comp["Q4-2026 Daily"],
+                    name="Q4-2026",
+                    marker_color='#1F497D'
+                ))
+                fig_v_bar.add_trace(go.Bar(
+                    x=p26_daily_comp['Working Day'],
+                    y=p26_daily_comp["Q1-2026 Daily"],
+                    name="Q1-2026",
+                    marker_color='#93C5FD'
+                ))
+                fig_v_bar.update_layout(
+                    barmode='group',
+                    title="2026 Daily Closures: Q4 vs Q1 (Aligned by Working Day)",
+                    height=340,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_bar, use_container_width=True)
+
+                fig_v_scurve = go.Figure()
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=p26_daily_comp['Working Day'],
+                    y=p26_daily_comp["Q4-2026 % Complete"],
+                    name="Q4-2026 % Complete",
+                    line=dict(color='#1F497D', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=p26_daily_comp['Working Day'],
+                    y=p26_daily_comp["Q1-2026 % Complete"],
+                    name="Q1-2026 % Complete",
+                    line=dict(color='#3B82F6', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.update_layout(
+                    title="2026 Cumulative Completion S-Curve (%)",
+                    yaxis=dict(ticksuffix="%", range=[0, 105]),
+                    height=280,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_scurve, use_container_width=True)
+
+            with col_v2:
+                st.markdown("##### 2026 Day-by-Day Comparative Matrix")
+                st.dataframe(p26_daily_comp, use_container_width=True, height=620, hide_index=True)
+                csv_p26_daily = p26_daily_comp.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download 2026 Daily Velocity Comparison CSV",
+                    csv_p26_daily,
+                    "2026_q1_vs_q4_daily_velocity.csv",
+                    "text/csv"
+                )
+        else:
+            st.info("No daily completion timestamps found for 2026 Q1 and Q4.")
+
 # -----------------------------------------------------------------------------
 # PAGE 4: 2025 Q1 VS Q4 COMPARISON (SINGLE DEDICATED PAGE)
 # -----------------------------------------------------------------------------
@@ -897,6 +1034,73 @@ elif page == "2025: Q1 vs Q4 Comparison":
 
     csv_data = comp_df.to_csv(index=False).encode('utf-8')
     st.download_button("📥 Download 2025 Q1 vs Q4 Comparison CSV", csv_data, "2025_q1_vs_q4_comparison.csv", "text/csv")
+
+    with st.expander("📈 **View 2025 Day-by-Day Closure Velocity Comparison (Q1 vs Q4)**", expanded=False):
+        trend_analyzer = TrendAnalyzer()
+        p25_daily_comp = trend_analyzer.compare_quarter_daily_trends(
+            tasks_q4_25, meta_q4_25, tasks_q1_25, meta_q1_25, holidays=cycle_mgr.holidays
+        )
+        if not p25_daily_comp.empty:
+            col_v1, col_v2 = st.columns([3, 2])
+            with col_v1:
+                fig_v_bar = go.Figure()
+                fig_v_bar.add_trace(go.Bar(
+                    x=p25_daily_comp['Working Day'],
+                    y=p25_daily_comp["Q4-2025 Daily"],
+                    name="Q4-2025",
+                    marker_color='#D97706'
+                ))
+                fig_v_bar.add_trace(go.Bar(
+                    x=p25_daily_comp['Working Day'],
+                    y=p25_daily_comp["Q1-2025 Daily"],
+                    name="Q1-2025",
+                    marker_color='#FDE68A'
+                ))
+                fig_v_bar.update_layout(
+                    barmode='group',
+                    title="2025 Daily Closures: Q4 vs Q1 (Aligned by Working Day)",
+                    height=340,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_bar, use_container_width=True)
+
+                fig_v_scurve = go.Figure()
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=p25_daily_comp['Working Day'],
+                    y=p25_daily_comp["Q4-2025 % Complete"],
+                    name="Q4-2025 % Complete",
+                    line=dict(color='#D97706', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.add_trace(go.Scatter(
+                    x=p25_daily_comp['Working Day'],
+                    y=p25_daily_comp["Q1-2025 % Complete"],
+                    name="Q1-2025 % Complete",
+                    line=dict(color='#F59E0B', width=2.5),
+                    mode='lines+markers'
+                ))
+                fig_v_scurve.update_layout(
+                    title="2025 Cumulative Completion S-Curve (%)",
+                    yaxis=dict(ticksuffix="%", range=[0, 105]),
+                    height=280,
+                    margin=dict(l=20, r=20, t=30, b=30),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_v_scurve, use_container_width=True)
+
+            with col_v2:
+                st.markdown("##### 2025 Day-by-Day Comparative Matrix")
+                st.dataframe(p25_daily_comp, use_container_width=True, height=620, hide_index=True)
+                csv_p25_daily = p25_daily_comp.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    "📥 Download 2025 Daily Velocity Comparison CSV",
+                    csv_p25_daily,
+                    "2025_q1_vs_q4_daily_velocity.csv",
+                    "text/csv"
+                )
+        else:
+            st.info("No daily completion timestamps found for 2025 Q1 and Q4.")
 
 # -----------------------------------------------------------------------------
 # PAGE 4: ALL-QUARTERS OVERVIEW (8 QUARTERS: 2025 & 2026)
@@ -1156,28 +1360,291 @@ elif page == "Backlog & SLA Monitoring":
 # -----------------------------------------------------------------------------
 elif page == "Daily Performance":
     st.markdown('<div class="main-header">Daily Performance & Closure Velocity</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Daily task completion velocity, cumulative progress, and working day calendar tracking</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Quarter-wise comparative daily trends (2026 vs 2025 / any quarter pair) and single-cycle closure velocity tracking</div>', unsafe_allow_html=True)
 
-    rep_gen = ReportGenerator(curr_meta, app_mode=app_mode)
-    daily_df = rep_gen.build_daily_trends_df(c_tasks)
+    tab_comp, tab_single = st.tabs([
+        "📊 Quarter-Wise Daily Trend Comparison (2026 vs 2025 / Any Pair)",
+        "📈 Single-Quarter Velocity Detail"
+    ])
 
-    if not daily_df.empty:
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            fig_daily = px.bar(daily_df, x='Date', y='Daily Closures', title="Daily Task Closures", color_discrete_sequence=['#3B82F6'])
-            fig_daily.add_scatter(x=daily_df['Date'], y=daily_df['7-Day Moving Avg'], mode='lines', name='7-Day MA', line=dict(color='#DC2626', width=2))
-            fig_daily.update_layout(height=350)
-            st.plotly_chart(fig_daily, use_container_width=True)
+    with tab_comp:
+        col_p1, col_p2 = st.columns([1, 2])
+        with col_p1:
+            comp_preset = st.selectbox(
+                "Quarter Comparison Scope:",
+                [
+                    "Q4-2026 vs Q4-2025 (Autumn YoY)",
+                    "Q1-2026 vs Q1-2025 (Spring YoY)",
+                    "2026: Q1 vs Q4 (Intra-Year)",
+                    "2025: Q1 vs Q4 (Intra-Year)",
+                    "Custom Quarter Pair (Manual Dates)"
+                ],
+                index=0,
+                key="daily_comp_preset"
+            )
+        with col_p2:
+            st.markdown("""
+            <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 14px; margin-top: 10px;">
+                <span style="font-weight: 600; color: #1E293B; font-size: 13px;">⚡ Working Day Alignment Rule:</span><br>
+                <span style="color: #475569; font-size: 12px;">Since campaigns start on different calendar days across years, trends are normalized along <b>Working Day 1 to Day N</b> for an accurate like-for-like velocity comparison.</span>
+            </div>
+            """, unsafe_allow_html=True)
 
-            fig_cum = px.line(daily_df, x='Date', y='Cumulative Closures', title="Cumulative Closures Over Cycle", color_discrete_sequence=['#10B981'])
-            fig_cum.update_layout(height=280)
-            st.plotly_chart(fig_cum, use_container_width=True)
+        # Set default parameters based on preset
+        if comp_preset == "Q4-2026 vs Q4-2025 (Autumn YoY)":
+            def_qa_name, def_qb_name = "Q4-2026", "Q4-2025"
+            def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
+            def_qb_start, def_qb_end = date(2025, 10, 6), date(2025, 10, 23)
+        elif comp_preset == "Q1-2026 vs Q1-2025 (Spring YoY)":
+            def_qa_name, def_qb_name = "Q1-2026", "Q1-2025"
+            def_qa_start, def_qa_end = date(2026, 5, 5), date(2026, 5, 22)
+            def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
+        elif comp_preset == "2026: Q1 vs Q4 (Intra-Year)":
+            def_qa_name, def_qb_name = "Q4-2026", "Q1-2026"
+            def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
+            def_qb_start, def_qb_end = date(2026, 5, 5), date(2026, 5, 22)
+        elif comp_preset == "2025: Q1 vs Q4 (Intra-Year)":
+            def_qa_name, def_qb_name = "Q4-2025", "Q1-2025"
+            def_qa_start, def_qa_end = date(2025, 10, 6), date(2025, 10, 23)
+            def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
+        else: # Custom
+            def_qa_name, def_qb_name = "Q4-2026", "Q4-2025"
+            def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
+            def_qb_start, def_qb_end = date(2025, 10, 6), date(2025, 10, 23)
 
-        with col2:
-            st.subheader("Daily Closures Data Table")
-            st.dataframe(daily_df, use_container_width=True, height=650, hide_index=True)
-    else:
-        st.info("No completion timestamps available to compute daily performance.")
+        with st.expander("🛠️ **Adjust Quarter Comparison Dates & Custom Windows**", expanded=(comp_preset == "Custom Quarter Pair (Manual Dates)")):
+            col_c_left, col_c_right = st.columns(2)
+            with col_c_left:
+                st.markdown("##### **Quarter A (Primary / Baseline)**")
+                qa_yr = st.selectbox("Year A", [2026, 2025], index=0 if "2026" in def_qa_name else 1, key="daily_qa_yr")
+                qa_q = st.selectbox("Quarter A", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_qa_name.split("-")[0]), key="daily_qa_q")
+                qa_name = f"{qa_q}-{qa_yr}"
+                d_qa1, d_qa2 = st.columns(2)
+                qa_start = d_qa1.date_input("Start Date A", value=def_qa_start, key="daily_qa_s")
+                qa_end = d_qa2.date_input("End Date A", value=def_qa_end, key="daily_qa_e")
+
+            with col_c_right:
+                st.markdown("##### **Quarter B (Comparison / Prior)**")
+                qb_yr = st.selectbox("Year B", [2026, 2025], index=1 if "2025" in def_qb_name else 0, key="daily_qb_yr")
+                qb_q = st.selectbox("Quarter B", ["Q1", "Q2", "Q3", "Q4"], index=["Q1", "Q2", "Q3", "Q4"].index(def_qb_name.split("-")[0]), key="daily_qb_q")
+                qb_name = f"{qb_q}-{qb_yr}"
+                d_qb1, d_qb2 = st.columns(2)
+                qb_start = d_qb1.date_input("Start Date B", value=def_qb_start, key="daily_qb_s")
+                qb_end = d_qb2.date_input("End Date B", value=def_qb_end, key="daily_qb_e")
+
+        kpis_a, tasks_a, disc_a, meta_a = get_quarter_kpis(tasks_df, disc_df, qa_name, start_date=qa_start, end_date=qa_end)
+        kpis_b, tasks_b, disc_b, meta_b = get_quarter_kpis(tasks_df, disc_df, qb_name, start_date=qb_start, end_date=qb_end)
+
+        trend_analyzer = TrendAnalyzer()
+        comp_daily_df = trend_analyzer.compare_quarter_daily_trends(
+            tasks_a, meta_a, tasks_b, meta_b, holidays=cycle_mgr.holidays
+        )
+
+        st.markdown(f"""
+        <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+            <span style="font-weight: 700; color: #1E293B;">🗓️ Working Day Aligned Velocity Scope:</span><br>
+            • <b>{qa_name}:</b> <code>{qa_start}</code> to <code>{qa_end}</code> ({meta_a.get('total_working_days', 0)} working days) — <b>{len(tasks_a):,}</b> tasks eligible<br>
+            • <b>{qb_name}:</b> <code>{qb_start}</code> to <code>{qb_end}</code> ({meta_b.get('total_working_days', 0)} working days) — <b>{len(tasks_b):,}</b> tasks eligible
+        </div>
+        """, unsafe_allow_html=True)
+
+        if comp_daily_df.empty:
+            st.warning("⚠️ No completion timestamps available to compute daily comparative velocity for these quarters.")
+        else:
+            col_qa_daily = f"{qa_name} Daily"
+            col_qb_daily = f"{qb_name} Daily"
+            col_qa_cum = f"{qa_name} Cumulative"
+            col_qb_cum = f"{qb_name} Cumulative"
+            col_qa_pct = f"{qa_name} % Complete"
+            col_qb_pct = f"{qb_name} % Complete"
+
+            peak_a = int(comp_daily_df[col_qa_daily].max()) if col_qa_daily in comp_daily_df.columns else 0
+            peak_b = int(comp_daily_df[col_qb_daily].max()) if col_qb_daily in comp_daily_df.columns else 0
+            total_a = int(comp_daily_df[col_qa_cum].iloc[-1]) if col_qa_cum in comp_daily_df.columns else 0
+            total_b = int(comp_daily_df[col_qb_cum].iloc[-1]) if col_qb_cum in comp_daily_df.columns else 0
+            avg_a = float(comp_daily_df[col_qa_daily].mean()) if col_qa_daily in comp_daily_df.columns else 0.0
+            avg_b = float(comp_daily_df[col_qb_daily].mean()) if col_qb_daily in comp_daily_df.columns else 0.0
+
+            # 50% milestone pace calculation
+            day_50_a = "-"
+            day_50_b = "-"
+            if col_qa_pct in comp_daily_df.columns:
+                sub_50_a = comp_daily_df[comp_daily_df[col_qa_pct] >= 50.0]
+                if not sub_50_a.empty:
+                    day_50_a = sub_50_a.iloc[0]['Working Day']
+            if col_qb_pct in comp_daily_df.columns:
+                sub_50_b = comp_daily_df[comp_daily_df[col_qb_pct] >= 50.0]
+                if not sub_50_b.empty:
+                    day_50_b = sub_50_b.iloc[0]['Working Day']
+
+            pace_counts = comp_daily_df['Pace Leader'].value_counts() if 'Pace Leader' in comp_daily_df.columns else {}
+            lead_a_days = pace_counts.get(qa_name, 0)
+            lead_b_days = pace_counts.get(qb_name, 0)
+
+            # 4 Summary Metric Cards
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric(
+                "Peak Single-Day Closures",
+                f"{peak_a:,} ({qa_name})",
+                delta=f"{peak_a - peak_b:+d} vs {qb_name} ({peak_b:,})"
+            )
+            c2.metric(
+                "Avg Closures / Working Day",
+                f"{avg_a:.1f} tasks/d",
+                delta=f"{avg_a - avg_b:+.1f} vs {qb_name} ({avg_b:.1f})"
+            )
+            c3.metric(
+                "Total Closures Completed",
+                f"{total_a:,} tasks",
+                delta=f"{total_a - total_b:+d} vs {qb_name} ({total_b:,})"
+            )
+            c4.metric(
+                "50% Progress Milestone Pace",
+                f"{qa_name}: {day_50_a}",
+                delta=f"{qb_name}: {day_50_b} ({qa_name} led {lead_a_days}d vs {lead_b_days}d)"
+            )
+
+            st.markdown("---")
+
+            # Comparative Charts
+            col_chart_l, col_chart_r = st.columns([1, 1])
+
+            with col_chart_l:
+                st.subheader(f"📊 Daily Task Closures: {qa_name} vs {qb_name}")
+                fig_daily_comp = go.Figure()
+                fig_daily_comp.add_trace(go.Bar(
+                    x=comp_daily_df['Working Day'],
+                    y=comp_daily_df[col_qa_daily],
+                    name=f"{qa_name}",
+                    marker_color='#1F497D'
+                ))
+                fig_daily_comp.add_trace(go.Bar(
+                    x=comp_daily_df['Working Day'],
+                    y=comp_daily_df[col_qb_daily],
+                    name=f"{qb_name}",
+                    marker_color='#93C5FD'
+                ))
+                fig_daily_comp.update_layout(
+                    barmode='group',
+                    xaxis_title="Working Day Elapsed (Normalized)",
+                    yaxis_title="Closed Tasks",
+                    height=380,
+                    margin=dict(l=20, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_daily_comp, use_container_width=True)
+
+            with col_chart_r:
+                st.subheader("📈 Cumulative Progress Trajectory (% S-Curve)")
+                fig_scurve = go.Figure()
+                fig_scurve.add_trace(go.Scatter(
+                    x=comp_daily_df['Working Day'],
+                    y=comp_daily_df[col_qa_pct],
+                    name=f"{qa_name} % Complete",
+                    line=dict(color='#1F497D', width=3),
+                    mode='lines+markers'
+                ))
+                fig_scurve.add_trace(go.Scatter(
+                    x=comp_daily_df['Working Day'],
+                    y=comp_daily_df[col_qb_pct],
+                    name=f"{qb_name} % Complete",
+                    line=dict(color='#10B981', width=3, dash='dot'),
+                    mode='lines+markers'
+                ))
+                fig_scurve.add_hline(
+                    y=100.0,
+                    line_dash="dash",
+                    line_color="#9CA3AF",
+                    annotation_text="100% Target Target",
+                    annotation_position="bottom right"
+                )
+                fig_scurve.update_layout(
+                    xaxis_title="Working Day Elapsed (Normalized)",
+                    yaxis=dict(title="% of Cycle Scope Completed", ticksuffix="%", range=[0, 105]),
+                    height=380,
+                    margin=dict(l=20, r=20, t=30, b=40),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                )
+                st.plotly_chart(fig_scurve, use_container_width=True)
+
+            # Cumulative Volume & Daily Velocity Delta Section
+            with st.expander("📉 **View Cumulative Closure Volume & Daily Velocity Delta Charts**", expanded=False):
+                col_exp1, col_exp2 = st.columns(2)
+                with col_exp1:
+                    fig_vol = go.Figure()
+                    fig_vol.add_trace(go.Scatter(
+                        x=comp_daily_df['Working Day'],
+                        y=comp_daily_df[col_qa_cum],
+                        name=f"{qa_name} Cumulative",
+                        line=dict(color='#1F497D', width=2.5),
+                        mode='lines+markers'
+                    ))
+                    fig_vol.add_trace(go.Scatter(
+                        x=comp_daily_df['Working Day'],
+                        y=comp_daily_df[col_qb_cum],
+                        name=f"{qb_name} Cumulative",
+                        line=dict(color='#3B82F6', width=2.5, dash='dash'),
+                        mode='lines+markers'
+                    ))
+                    fig_vol.update_layout(
+                        title="Cumulative Completed Volume (Task Counts)",
+                        height=320,
+                        margin=dict(l=20, r=20, t=35, b=30)
+                    )
+                    st.plotly_chart(fig_vol, use_container_width=True)
+
+                with col_exp2:
+                    delta_col = f"Daily Delta ({qa_name} - {qb_name})"
+                    if delta_col in comp_daily_df.columns:
+                        colors = ['#10B981' if v >= 0 else '#EF4444' for v in comp_daily_df[delta_col]]
+                        fig_delta = go.Figure(go.Bar(
+                            x=comp_daily_df['Working Day'],
+                            y=comp_daily_df[delta_col],
+                            marker_color=colors,
+                            name="Velocity Delta"
+                        ))
+                        fig_delta.update_layout(
+                            title=f"Daily Closure Velocity Delta: {qa_name} vs {qb_name}",
+                            yaxis_title="Task Delta (Positive = QA Lead)",
+                            height=320,
+                            margin=dict(l=20, r=20, t=35, b=30)
+                        )
+                        st.plotly_chart(fig_delta, use_container_width=True)
+
+            # Aligned Day-by-Day Data Matrix
+            st.subheader(f"📋 Aligned Day-by-Day Comparative Performance: {qa_name} vs {qb_name}")
+            st.dataframe(comp_daily_df, use_container_width=True, height=520, hide_index=True)
+
+            csv_daily_comp = comp_daily_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                f"📥 Download {qa_name} vs {qb_name} Daily Comparison CSV",
+                csv_daily_comp,
+                f"daily_comparison_{qa_name}_vs_{qb_name}.csv",
+                "text/csv"
+            )
+
+    with tab_single:
+        st.markdown(f"#### **Single-Cycle Closure Velocity Detail: {selected_cycle}**")
+        rep_gen = ReportGenerator(curr_meta, app_mode=app_mode)
+        daily_df = rep_gen.build_daily_trends_df(c_tasks)
+
+        if not daily_df.empty:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                fig_daily = px.bar(daily_df, x='Date', y='Daily Closures', title=f"Daily Task Closures ({selected_cycle})", color_discrete_sequence=['#3B82F6'])
+                fig_daily.add_scatter(x=daily_df['Date'], y=daily_df['7-Day Moving Avg'], mode='lines', name='7-Day MA', line=dict(color='#DC2626', width=2))
+                fig_daily.update_layout(height=350)
+                st.plotly_chart(fig_daily, use_container_width=True)
+
+                fig_cum = px.line(daily_df, x='Date', y='Cumulative Closures', title=f"Cumulative Closures Over Cycle ({selected_cycle})", color_discrete_sequence=['#10B981'])
+                fig_cum.update_layout(height=280)
+                st.plotly_chart(fig_cum, use_container_width=True)
+
+            with col2:
+                st.subheader("Daily Closures Data Table")
+                st.dataframe(daily_df, use_container_width=True, height=650, hide_index=True)
+        else:
+            st.info("No completion timestamps available to compute daily performance for active cycle.")
 
 # -----------------------------------------------------------------------------
 # PAGE 8: DATA QUALITY & DISCREPANCIES
