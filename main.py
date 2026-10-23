@@ -337,19 +337,36 @@ def cmd_pipeline(args):
                 api_cfg = loader.get_api_config()
                 if not api_cfg.get('base_url'):
                     logger.error("Live mode selected but no API credentials configured in .env.")
+                    print("  [ERROR] Live mode selected, but no API_BASE_URL found in .env.")
+                    print("  Please configure .env with your ServiceNow instance URL and credentials.")
                     run_hist.end_run(run_id, "FAILED", errors="Missing live API credentials")
                     return 1
 
                 from src.extraction.task_extractor import TaskExtractor
                 from src.extraction.discrepancy_extractor import DiscrepancyExtractor
 
+                print(f"  [1/2] Connecting to ServiceNow: {api_cfg['base_url']}...")
                 client = get_service_now_client(loader)
                 field_map = loader.get_field_mapping()
                 t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
                 d_ext = DiscrepancyExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('u_failed_data_certifications', {}).get('mappings', {}))
                 
+                print(f"  [2/2] Fetching live records from table '{t_ext.table_name}'...")
                 raw_tasks = t_ext.extract()
-                raw_disc = d_ext.extract()
+                print(f"        -> Fetched {len(raw_tasks):,} live certification tasks.")
+                
+                if raw_tasks.empty:
+                    print(f"  [WARNING] Table '{t_ext.table_name}' returned 0 records.")
+                
+                print(f"        Fetching live discrepancies from table '{d_ext.table_name}'...")
+                try:
+                    raw_disc = d_ext.extract()
+                    print(f"        -> Fetched {len(raw_disc):,} live discrepancy records.")
+                except Exception as e_disc:
+                    logger.warning(f"Could not extract discrepancies: {e_disc}")
+                    print(f"        [NOTICE] Discrepancies table '{d_ext.table_name}' unavailable or empty: {e_disc}")
+                    print(f"        Continuing pipeline with 0 discrepancy records.")
+                    raw_disc = pd.DataFrame()
 
         # Step 2: Normalization
         normalizer = DataNormalizer(field_mapping={}, tz_config=loader.settings.get('timezone', 'UTC'))
@@ -853,10 +870,16 @@ def cmd_check_dates(args):
 
     print("\n[TIP] Dashboard Usage:")
     print("  In the Streamlit Dashboard, go to 'Compare Any 2 Quarters (Manual Dates)'")
-    print("  or '2026: Q1 vs Q4 Comparison' and enter the start and end dates shown above")
+    print("  or '2026: Q2 vs Q4 Comparison' and enter the start and end dates shown above")
     print("  to perfectly match your corporate ServiceNow tasks!")
     print("=" * 70)
     return 0
+
+def cmd_fetch_live(args):
+    """Fetches real-time records directly from ServiceNow and executes pipeline in live mode."""
+    args.mode = "live"
+    args.skip_fetch = False
+    return cmd_pipeline(args)
 
 def main():
     parser = argparse.ArgumentParser(
@@ -868,6 +891,7 @@ def main():
     subparsers.add_parser("validate-config", help="Validate local YAML configuration and environment")
     subparsers.add_parser("test-connection", help="Test live API connectivity and permissions")
     subparsers.add_parser("discover-schema", help="Inspect source schemas and suggest field mappings")
+    subparsers.add_parser("fetch-live", help="Connect to ServiceNow and fetch real-time production records")
     subparsers.add_parser("generate-demo", help="Generate synthetic certification test datasets")
     
     p_pipe = subparsers.add_parser("pipeline", help="Execute complete analytical data pipeline")
@@ -886,6 +910,7 @@ def main():
         "validate-config": cmd_validate_config,
         "test-connection": cmd_test_connection,
         "discover-schema": cmd_discover_schema,
+        "fetch-live": cmd_fetch_live,
         "generate-demo": cmd_generate_demo,
         "pipeline": cmd_pipeline,
         "compare-cycles": cmd_compare_cycles,

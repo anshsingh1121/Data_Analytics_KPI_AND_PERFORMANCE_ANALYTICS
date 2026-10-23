@@ -278,7 +278,19 @@ with st.sidebar:
                 use_container_width=True
             )
 
-    if app_mode == 'demo':
+    if app_mode == 'live':
+        if st.button("⚡ Fetch Real-Time Data from ServiceNow", type="primary", use_container_width=True):
+            with st.spinner("Connecting to ServiceNow and extracting real-time records..."):
+                from main import cmd_pipeline
+                import argparse
+                res = cmd_pipeline(argparse.Namespace(mode="live", skip_fetch=False))
+                if res == 0 or res is None:
+                    st.cache_data.clear()
+                    st.success("Successfully fetched real-time ServiceNow data!")
+                    st.rerun()
+                else:
+                    st.error("Live fetch encountered an issue. Check 'Settings & API Setup' page or logs.")
+    else:
         if st.button("🔄 Refresh Demo Pipeline Data", use_container_width=True):
             with st.spinner("Re-generating annual quarter datasets and calculating KPIs..."):
                 try:
@@ -294,16 +306,32 @@ with st.sidebar:
 
 # Empty state handling
 if tasks_df is None or tasks_df.empty:
-    st.warning("⚠️ No processed data found. The analytical pipeline has not been executed yet.")
-    st.info("Click the button below to generate synthetic demo data and run the complete pipeline.")
-    if st.button("🚀 Initialize Demo Pipeline", type="primary"):
-        with st.spinner("Generating demo data and executing analytics engine..."):
-            from main import cmd_pipeline
-            import argparse
-            cmd_pipeline(argparse.Namespace(mode="demo"))
-            st.cache_data.clear()
-            st.rerun()
-    st.stop()
+    if app_mode == 'live':
+        st.warning("⚠️ No ServiceNow records loaded yet. Your application is running in LIVE API mode.")
+        st.info("Connect to your corporate ServiceNow instance and fetch real-time certification task records.")
+        if st.button("⚡ Fetch Real-Time Data from ServiceNow", type="primary"):
+            with st.spinner("Connecting to ServiceNow and extracting live records..."):
+                from main import cmd_pipeline
+                import argparse
+                res = cmd_pipeline(argparse.Namespace(mode="live", skip_fetch=False))
+                if res == 0 or res is None:
+                    st.cache_data.clear()
+                    st.success("Real-time data fetched successfully! Reloading...")
+                    st.rerun()
+                else:
+                    st.error("Failed to connect or fetch data. Check your credentials in 'Settings & API Setup' or review logs.")
+        st.stop()
+    else:
+        st.warning("⚠️ No processed data found. The analytical pipeline has not been executed yet.")
+        st.info("Click the button below to generate synthetic demo data and run the complete pipeline.")
+        if st.button("🚀 Initialize Demo Pipeline", type="primary"):
+            with st.spinner("Generating demo data and executing analytics engine..."):
+                from main import cmd_pipeline
+                import argparse
+                cmd_pipeline(argparse.Namespace(mode="demo", skip_fetch=False))
+                st.cache_data.clear()
+                st.rerun()
+        st.stop()
 
 # Instantiate KPI Engine
 kpi_engine = KPIEngine(kpi_cfg, cycle_cfg)
@@ -1748,56 +1776,195 @@ elif page == "Data & Pipeline Health":
 # PAGE 9: SETTINGS & API SETUP
 # -----------------------------------------------------------------------------
 elif page == "Settings & API Setup":
-    st.markdown('<div class="main-header">System Settings & ServiceNow API Integration</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Configure credentials, test connectivity, discover source schemas, and manage execution mode</div>', unsafe_allow_html=True)
+    st.markdown('<div class="main-header">ServiceNow Live Integration & Configuration</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Connect to your corporate ServiceNow instance, authenticate, test tables, and fetch real-time data</div>', unsafe_allow_html=True)
 
     api_cfg = loader.get_api_config()
+    is_live = (app_mode == 'live')
 
-    st.subheader("1. API Configuration & Secret Status")
-    c1, c2, c3 = st.columns(3)
-    c1.info(f"**Operating Mode:** `{app_mode.upper()}`")
-    c2.info(f"**API Provider:** `{api_cfg.get('provider', 'servicenow').upper()}`")
-    c3.info(f"**Base URL:** `{api_cfg.get('base_url') or 'Not Configured (Demo Mode)'}`")
+    # Top Status Bar
+    col_m1, col_m2, col_m3, col_m4 = st.columns(4)
+    with col_m1:
+        if is_live:
+            st.success("**Mode:** LIVE API")
+        else:
+            st.warning("**Mode:** OFFLINE DEMO")
+    with col_m2:
+        st.info(f"**Provider:** `{api_cfg.get('provider', 'servicenow').upper()}`")
+    with col_m3:
+        configured_url = api_cfg.get('base_url') or ""
+        display_url = configured_url if len(configured_url) <= 32 else (configured_url[:29] + "...")
+        st.info(f"**Instance:** `{display_url or 'Not Set'}`")
+    with col_m4:
+        tls_stat = "ON (Windows CA)" if api_cfg.get('verify_tls') else "DISABLED"
+        st.info(f"**TLS Security:** `{tls_stat}`")
 
-    st.markdown("""
-    > **Note on Enterprise Credentials:**
-    > Credentials are read securely from `.env` using `python-dotenv`.
-    > Passwords and bearer tokens are strictly masked and never logged or exposed.
-    """)
+    st.markdown("---")
 
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
-        if st.button("🔌 Test API Connection & Permissions", use_container_width=True):
-            if app_mode == 'demo' or not api_cfg.get('base_url'):
-                st.warning("Running in DEMO mode. No live API credentials entered.")
-                st.info("To connect to ServiceNow, copy `.env.example` to `.env`, set `APP_MODE=live`, and configure credentials.")
-            else:
-                with st.spinner("Connecting to ServiceNow instance..."):
+    # Section 1: Interactive Credential Setup & Management
+    with st.expander("⚙️ **Configure / Edit ServiceNow Connection Credentials**", expanded=(not api_cfg.get('base_url'))):
+        st.markdown("""
+        Enter your corporate ServiceNow instance details below. These are stored locally in `.env` 
+        and are never committed to version control.
+        """)
+        with st.form("servicenow_credentials_form"):
+            form_url = st.text_input(
+                "ServiceNow Instance URL",
+                value=api_cfg.get('base_url') or "https://your-instance.service-now.com",
+                help="Domain only, e.g. https://company.service-now.com (do not include /navpage.do)"
+            )
+            fc1, fc2 = st.columns(2)
+            with fc1:
+                form_user = st.text_input("Service Account / Username", value=api_cfg.get('username') or "")
+            with fc2:
+                form_pass = st.text_input("Password / Token", type="password", value=api_cfg.get('password') or "")
+
+            fc3, fc4 = st.columns(2)
+            with fc3:
+                form_mode = st.radio(
+                    "Target Mode",
+                    options=["live", "demo"],
+                    index=0 if is_live else 1,
+                    horizontal=True,
+                    help="'live' connects to ServiceNow; 'demo' uses local synthetic data."
+                )
+            with fc4:
+                form_tls = st.checkbox(
+                    "Enable Corporate TLS / SSL Verification",
+                    value=api_cfg.get('verify_tls', True),
+                    help="Automatically trusts Windows OS enterprise root certificates (Zscaler, Netskope, etc.)."
+                )
+
+            submit_creds = st.form_submit_button("💾 Save Credentials & Apply Mode", type="primary", use_container_width=True)
+            if submit_creds:
+                env_content = f"""# DATA CERTIFICATION KPI & PERFORMANCE ANALYTICS — ENVIRONMENT CONFIGURATION
+API_BASE_URL={form_url.strip()}
+API_PROVIDER=servicenow
+API_AUTH_METHOD=basic
+API_USERNAME={form_user.strip()}
+API_PASSWORD={form_pass.strip()}
+API_TIMEOUT_SECONDS=30
+API_PAGE_SIZE=500
+API_MAX_RETRIES=3
+API_VERIFY_TLS={'true' if form_tls else 'false'}
+APP_MODE={form_mode}
+"""
+                env_file = PROJECT_ROOT / ".env"
+                env_file.write_text(env_content, encoding="utf-8")
+                # Reload into os.environ
+                os.environ["API_BASE_URL"] = form_url.strip()
+                os.environ["API_USERNAME"] = form_user.strip()
+                os.environ["API_PASSWORD"] = form_pass.strip()
+                os.environ["APP_MODE"] = form_mode
+                os.environ["API_VERIFY_TLS"] = "true" if form_tls else "false"
+                st.success("Credentials saved to .env! Reloading dashboard...")
+                st.rerun()
+
+    # Section 2: Actions & Pipeline Controls
+    st.subheader("⚡ Real-Time Data Actions")
+    col_act1, col_act2, col_act3 = st.columns(3)
+
+    with col_act1:
+        btn_test = st.button("🔌 Test API & Tables", use_container_width=True)
+    with col_act2:
+        btn_fetch = st.button("📥 Fetch Real-Time Data from ServiceNow", type="primary", use_container_width=True)
+    with col_act3:
+        btn_schema = st.button("🔍 Inspect Source Schema", use_container_width=True)
+
+    # Action 1: Test Connection & Tables
+    if btn_test:
+        if not api_cfg.get('base_url'):
+            st.error("Cannot test connection: API_BASE_URL is not configured. Please enter your ServiceNow details above.")
+        else:
+            with st.spinner(f"Contacting {api_cfg['base_url']} and validating table permissions..."):
+                try:
                     from src.connectors.service_now_client import ServiceNowClient
                     from src.discovery.connection_diagnostics import ConnectionDiagnostics
                     client = ServiceNowClient(
                         instance_url=api_cfg['base_url'],
                         username=api_cfg['username'],
                         password=api_cfg['password'],
-                        timeout=api_cfg['timeout_seconds']
+                        timeout=api_cfg['timeout_seconds'],
+                        retries=api_cfg['max_retries'],
+                        verify_tls=api_cfg['verify_tls'],
+                        ca_bundle=api_cfg.get('ca_bundle'),
+                        proxies=api_cfg.get('proxies')
                     )
                     diag = ConnectionDiagnostics(client, loader.settings.get('provider', {}))
                     res = diag.run_diagnostics()
-                    if res['api_connectivity'] and res['auth_valid']:
-                        st.success("API Connection & Authentication Successful!")
-                    else:
-                        st.error("API Connection Failed. Check network, VPN, and credentials.")
 
-    with col_btn2:
-        if st.button("🔄 Execute Full Analytics Pipeline", type="primary", use_container_width=True):
-            with st.spinner(f"Running analytical pipeline in {app_mode.upper()} mode..."):
+                    t1 = loader.settings.get('provider', {}).get('tables', {}).get('cert_task', 'cert_task')
+                    t2 = loader.settings.get('provider', {}).get('tables', {}).get('failed_data_certifications', 'u_failed_data_certifications')
+                    
+                    c_tasks_count = client.get_record_count(t1)
+                    c_disc_count = client.get_record_count(t2)
+
+                    st.markdown("#### Diagnostic Verification Results:")
+                    r1, r2, r3, r4 = st.columns(4)
+                    r1.metric("API Connectivity", "CONNECTED" if res.get('api_connectivity') else "FAILED")
+                    r2.metric("Authentication", "AUTHENTICATED" if res.get('auth_valid') else "FAILED")
+                    r3.metric(f"Tasks ({t1})", f"{c_tasks_count:,} records" if c_tasks_count >= 0 else "ACCESSIBLE")
+                    r4.metric(f"Discrepancies ({t2})", f"{c_disc_count:,} records" if c_disc_count >= 0 else "ACCESSIBLE")
+
+                    if res.get('api_connectivity') and res.get('auth_valid'):
+                        st.success("✅ Corporate ServiceNow instance is fully reachable and authorized!")
+                    else:
+                        st.error("❌ Connection failed. Check instance URL, corporate VPN, or user credentials.")
+                        for s in res.get('suggestions', []):
+                            st.warning(f"Suggestion: {s}")
+                except Exception as e:
+                    st.error(f"Diagnostic error: {e}")
+
+    # Action 2: Fetch Live Records
+    if btn_fetch:
+        if not api_cfg.get('base_url'):
+            st.error("API_BASE_URL is not configured. Please fill in your ServiceNow credentials in the form above.")
+        else:
+            with st.spinner("Extracting real-time records from ServiceNow and computing KPIs..."):
                 from main import cmd_pipeline
                 import argparse
-                cmd_pipeline(argparse.Namespace(mode=app_mode))
-                st.cache_data.clear()
-                st.success("Pipeline executed successfully! Reloading data...")
-                st.rerun()
+                res = cmd_pipeline(argparse.Namespace(mode="live", skip_fetch=False))
+                if res == 0 or res is None:
+                    st.cache_data.clear()
+                    st.success("🎉 Real-time data successfully extracted from ServiceNow and loaded into dashboard!")
+                    st.balloons()
+                    st.rerun()
+                else:
+                    st.error("Pipeline failed during extraction. Check console/logs for error details.")
 
-    st.subheader("2. Source Table Field Mappings")
+    # Action 3: Inspect Source Schema
+    if btn_schema:
+        if not api_cfg.get('base_url'):
+            st.error("Please configure API_BASE_URL before discovering live schema.")
+        else:
+            with st.spinner("Querying ServiceNow sys_dictionary for live table schemas..."):
+                try:
+                    from src.connectors.service_now_client import ServiceNowClient
+                    from src.discovery.schema_discovery import SchemaDiscovery
+                    client = ServiceNowClient(
+                        instance_url=api_cfg['base_url'],
+                        username=api_cfg['username'],
+                        password=api_cfg['password'],
+                        timeout=api_cfg['timeout_seconds'],
+                        retries=api_cfg['max_retries'],
+                        verify_tls=api_cfg['verify_tls']
+                    )
+                    discovery = SchemaDiscovery(client, loader.settings.get('provider', {}))
+                    rep = discovery.generate_report()
+                    st.markdown("#### Discovered Schema Report:")
+                    st.json(rep)
+                except Exception as e:
+                    st.error(f"Schema discovery error: {e}")
+
+    st.markdown("---")
+    st.subheader("📋 Active Field Mappings (Internal Concept ↔ ServiceNow Field)")
     field_map = loader.get_field_mapping()
-    st.json(field_map)
+    t_tabs = st.tabs(["Table 1: cert_task", "Table 2: u_failed_data_certifications", "Raw JSON Config"])
+    with t_tabs[0]:
+        t1_maps = field_map.get('tables', {}).get('cert_task', {}).get('mappings', {})
+        st.dataframe(pd.DataFrame(list(t1_maps.items()), columns=["Business Concept", "ServiceNow Field Name"]), use_container_width=True, hide_index=True)
+    with t_tabs[1]:
+        t2_maps = field_map.get('tables', {}).get('u_failed_data_certifications', {}).get('mappings', {})
+        st.dataframe(pd.DataFrame(list(t2_maps.items()), columns=["Business Concept", "ServiceNow Field Name"]), use_container_width=True, hide_index=True)
+    with t_tabs[2]:
+        st.json(field_map)

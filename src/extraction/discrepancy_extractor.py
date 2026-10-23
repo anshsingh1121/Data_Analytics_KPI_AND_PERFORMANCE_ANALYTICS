@@ -9,16 +9,25 @@ class DiscrepancyExtractor:
 
     def __init__(self, api_client: Any, config: Dict[str, Any], field_mapping: Dict[str, str]):
         self.api_client = api_client
-        self.config = config
-        self.field_mapping = field_mapping
-        self.table_name = self.config.get('discrepancy_table', 'u_failed_data_certifications')
+        self.config = config or {}
+        self.field_mapping = field_mapping or {}
+        self.table_name = (
+            self.config.get('tables', {}).get('failed_data_certifications')
+            or self.config.get('discrepancy_table')
+            or 'u_failed_data_certifications'
+        )
 
-    def extract(self, start_date: Optional[str] = None, end_date: Optional[str] = None, full_refresh: bool = False) -> pd.DataFrame:
-        """Extracts discrepancy records."""
-        logger.info(f"Starting discrepancy extraction. Full refresh: {full_refresh}")
+    def extract(self, start_date: Optional[str] = None, end_date: Optional[str] = None, full_refresh: bool = False, custom_query: Optional[str] = None) -> pd.DataFrame:
+        """Extracts discrepancy records from ServiceNow."""
+        logger.info(f"Starting discrepancy extraction from table '{self.table_name}'. Full refresh: {full_refresh}")
         
         query_parts = []
-        if not full_refresh:
+        configured_query = self.config.get('query', {}).get('failed_data_certifications') if isinstance(self.config.get('query'), dict) else None
+        if custom_query:
+            query_parts.append(custom_query)
+        elif configured_query:
+            query_parts.append(configured_query)
+        elif not full_refresh:
             if start_date:
                 query_parts.append(f"sys_created_on>={start_date}")
             if end_date:
@@ -34,14 +43,14 @@ class DiscrepancyExtractor:
             )
             df = pd.DataFrame(records)
             if not df.empty:
-                logger.info(f"Extracted {len(df)} raw discrepancy records.")
+                logger.info(f"Extracted {len(df)} raw discrepancy records from '{self.table_name}'.")
                 df = self._apply_mappings(df)
             else:
-                logger.warning("No discrepancy records found.")
+                logger.warning(f"No discrepancy records returned from table '{self.table_name}'.")
             return df
         except Exception as e:
-            logger.error(f"Error during discrepancy extraction: {e}")
-            return pd.DataFrame()
+            logger.error(f"Error during discrepancy extraction from '{self.table_name}': {e}")
+            raise e
 
     def _apply_mappings(self, df: pd.DataFrame) -> pd.DataFrame:
         """Applies basic structural mappings before full normalization, preventing column collisions."""
