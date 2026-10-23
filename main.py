@@ -4,7 +4,7 @@ import argparse
 import logging
 import json
 import pandas as pd
-from datetime import datetime, timezone
+from datetime import datetime, date, timezone
 from pathlib import Path
 
 # Setup logging
@@ -436,13 +436,35 @@ def cmd_pipeline(args):
             match_cycles = alias_map.get(q_name, [q_name])
             q_tasks = tasks_resolved[tasks_resolved['certification_cycle'].isin(match_cycles)].copy()
             
-            # Enforce exact date boundaries for date-wise precision
+            # Enforce exact date boundaries for date-wise precision with fallback
             date_col = 'sys_created_on' if 'sys_created_on' in q_tasks.columns else ('created_at' if 'created_at' in q_tasks.columns else None)
             if date_col and q_meta.get('start_date') and q_meta.get('end_date'):
                 s_date = pd.to_datetime(q_meta['start_date']).date()
                 e_date = pd.to_datetime(q_meta['end_date']).date()
                 t_dates = pd.to_datetime(q_tasks[date_col], errors='coerce').dt.date
-                q_tasks = q_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+                date_filtered = q_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+                if not date_filtered.empty:
+                    q_tasks = date_filtered
+                else:
+                    # If narrow campaign window has 0 tasks, fallback to calendar quarter dates
+                    parts = q_name.split('-')
+                    q_num, yr = parts[0], int(parts[1])
+                    cal_bounds = {
+                        'Q1': (date(yr, 1, 1), date(yr, 3, 31)),
+                        'Q2': (date(yr, 4, 1), date(yr, 6, 30)),
+                        'Q3': (date(yr, 7, 1), date(yr, 9, 30)),
+                        'Q4': (date(yr, 10, 1), date(yr, 12, 31))
+                    }
+                    cal_s, cal_e = cal_bounds.get(q_num, (s_date, e_date))
+                    all_t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
+                    cal_filtered = tasks_resolved[(all_t_dates >= cal_s) & (all_t_dates <= cal_e)].copy()
+                    if not cal_filtered.empty:
+                        q_tasks = cal_filtered
+                        q_meta['start_date'] = str(cal_s)
+                        q_meta['end_date'] = str(cal_e)
+                        q_meta['final_deadline'] = str(cal_e)
+                        w_days = cycle_mgr.calculate_working_days(cal_s, cal_e)
+                        q_meta['total_working_days'] = max(1, w_days)
 
             q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy()
             
@@ -542,15 +564,15 @@ def cmd_pipeline(args):
             row_dict = {"Metric Name": k_label, "Unit": k_unit}
             for q_name in target_quarters:
                 val = quarterly_results[q_name]['kpis'].get(k_key, {}).get('value')
-                row_dict[f"{q_name}"] = f"{val}{k_unit}" if val is not None else "N/A"
+                row_dict[f"{q_name}"] = f"{val}{k_unit}" if (val is not None and not pd.isna(val)) else "-"
             
             # YoY Change: Q4-2026 vs Q4-2025
             val_26 = quarterly_results['Q4-2026']['kpis'].get(k_key, {}).get('value')
             val_25 = quarterly_results['Q4-2025']['kpis'].get(k_key, {}).get('value')
-            if val_26 is not None and val_25 is not None:
+            if val_26 is not None and val_25 is not None and not pd.isna(val_26) and not pd.isna(val_25):
                 row_dict['YoY Diff (Q4-26 vs Q4-25)'] = round(val_26 - val_25, 2)
             else:
-                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = "N/A"
+                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = "-"
             multi_q_rows.append(row_dict)
 
         multi_q_df = pd.DataFrame(multi_q_rows)

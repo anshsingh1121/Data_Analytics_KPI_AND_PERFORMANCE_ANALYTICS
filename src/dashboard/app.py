@@ -842,16 +842,106 @@ elif page == "2025: Q1 vs Q4 Comparison":
 # -----------------------------------------------------------------------------
 elif page == "All-Quarters Overview":
     st.markdown('<div class="main-header">Annual 4-Quarter Overview (2025 & 2026)</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Complete annual quarter tracking across all 4 quarters of 2025 and 2026</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Complete annual quarter tracking across all 4 quarters of 2025 and 2026 — select timeframe framing mode below</div>', unsafe_allow_html=True)
 
-    all_q_df = load_report_csv("all_quarters_comparison")
-    if all_q_df is None or (isinstance(all_q_df, pd.DataFrame) and all_q_df.empty):
-        all_q_df = load_report_csv("multi_quarter_comparison")
+    col_m1, col_m2 = st.columns([2, 3])
+    with col_m1:
+        timeframe_mode = st.selectbox(
+            "Quarter Timeframe Framing Mode:",
+            [
+                "Calendar 3-Month Quarter (Full Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec)",
+                "Complete Month (Apr 1–30, May 1–31, Jul 1–31, Oct 1–31)",
+                "Campaign Window (May 5–22, Oct 5–23, etc.)"
+            ],
+            index=0,
+            key="all_q_timeframe_mode"
+        )
+    with col_m2:
+        st.markdown("""
+        <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-top: 4px;">
+            <b>💡 Notice:</b> If corporate tasks were created across the entire 3 months rather than during narrow campaign dates, choose <b>"Calendar 3-Month Quarter"</b> to process all 3 months of data!
+        </div>
+        """, unsafe_allow_html=True)
 
-    if all_q_df is not None and not all_q_df.empty:
-        st.dataframe(all_q_df, use_container_width=True, height=450, hide_index=True)
+    target_quarters = ['Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025', 'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026']
+    
+    kpi_metric_specs = [
+        ('kpi_1_certification_completion', 'Certification Completion %', '%'),
+        ('kpi_2_daily_closure_rate', 'Daily Closure Rate', 'tasks/day'),
+        ('kpi_3_on_time_completion', 'On-Time Completion %', '%'),
+        ('kpi_4_avg_completion_time', 'Average Completion Time', 'days'),
+        ('kpi_5_discrepancy_rate', 'Discrepancy Rate', '%'),
+        ('kpi_6_data_accuracy', 'Data Accuracy / Pass Rate', '%'),
+        ('kpi_7_rework_rate', 'Rejection / Rework Rate', '%'),
+        ('kpi_8_backlog_aging', 'Open Backlog Tasks', 'tasks'),
+        ('kpi_9_productivity', 'Certifier Productivity', 'tasks/day'),
+        ('kpi_10_last_minute_closure', 'Last-Minute Closure % (<=1d)', '%'),
+        ('kpi_11_exception_resolution', 'Exception Resolution Time', 'days'),
+        ('kpi_12_sla_achievement', 'Final SLA Achievement %', '%')
+    ]
+
+    preset_name = "Calendar 3-Month Quarter" if "Calendar" in timeframe_mode else ("Campaign Window" if "Campaign" in timeframe_mode else "Complete Month")
+
+    if tasks_df is not None and not tasks_df.empty:
+        # Compute dynamically for all 8 quarters using the selected preset
+        quarterly_data = {}
+        quarter_task_counts = {}
+        for q in target_quarters:
+            yr = int(q.split('-')[1])
+            q_code = q.split('-')[0]
+            s_d, e_d = get_default_dates(yr, q_code, preset_name)
+            k_res, t_res, d_res, m_res = get_quarter_kpis(tasks_df, disc_df, q, start_date=s_d, end_date=e_d)
+            quarterly_data[q] = k_res
+            quarter_task_counts[q] = {
+                'count': len(t_res),
+                'disc_count': len(d_res),
+                'start': s_d,
+                'end': e_d,
+                'working_days': m_res.get('total_working_days', 0)
+            }
+
+        # Build comparison matrix
+        matrix_rows = []
+        for k_key, k_label, k_unit in kpi_metric_specs:
+            row = {"Metric Name": k_label, "Unit": k_unit}
+            for q in target_quarters:
+                val = quarterly_data[q].get(k_key, {}).get('value')
+                if val is not None and not pd.isna(val):
+                    row[q] = f"{val}{k_unit}"
+                else:
+                    row[q] = "-"
+            
+            # YoY change: Q4-2026 vs Q4-2025
+            v26 = quarterly_data['Q4-2026'].get(k_key, {}).get('value')
+            v25 = quarterly_data['Q4-2025'].get(k_key, {}).get('value')
+            if v26 is not None and v25 is not None and not pd.isna(v26) and not pd.isna(v25):
+                row['YoY Diff (Q4-26 vs Q4-25)'] = round(v26 - v25, 2)
+            else:
+                row['YoY Diff (Q4-26 vs Q4-25)'] = "-"
+            matrix_rows.append(row)
+
+        dyn_matrix_df = pd.DataFrame(matrix_rows)
+
+        # Display audit expander showing task counts per quarter
+        with st.expander("🔍 **Quarter Task Counts & Date Frames Audit**", expanded=False):
+            c_cols = st.columns(4)
+            for i, q in enumerate(target_quarters):
+                info = quarter_task_counts[q]
+                with c_cols[i % 4]:
+                    st.markdown(f"**{q}:** {info['count']:,} tasks")
+                    st.caption(f"`{info['start']}` to `{info['end']}` ({info['working_days']} working days)")
+
+        st.dataframe(dyn_matrix_df, use_container_width=True, height=450, hide_index=True)
+
+        csv_data = dyn_matrix_df.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download 8-Quarter Overview CSV", csv_data, f"all_quarters_overview_{preset_name.lower().replace(' ', '_')}.csv", "text/csv")
     else:
-        st.info("Run the pipeline to generate the multi-quarter overview matrix.")
+        all_q_df = load_report_csv("all_quarters_comparison")
+        if all_q_df is not None and not all_q_df.empty:
+            all_q_df = all_q_df.fillna("-").replace({"None": "-", None: "-"})
+            st.dataframe(all_q_df, use_container_width=True, height=450, hide_index=True)
+        else:
+            st.info("Run the pipeline or load task records to generate the multi-quarter overview matrix.")
 
 # -----------------------------------------------------------------------------
 # PAGE 5: CERTIFIER PRODUCTIVITY (FOCUSED ON WORST PERFORMERS)
