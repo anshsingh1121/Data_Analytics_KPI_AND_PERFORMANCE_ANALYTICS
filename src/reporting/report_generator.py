@@ -144,7 +144,7 @@ class ReportGenerator:
 
         disc_df = disc_df.copy()
 
-        cat_col = 'u_issue_category' if 'u_issue_category' in disc_df.columns else 'category'
+        cat_col = 'u_fcb_task_type' if 'u_fcb_task_type' in disc_df.columns else ('u_issue_category' if 'u_issue_category' in disc_df.columns else 'category')
         state_col = None
         for cand in ['u_status', 'state', 'status']:
             if cand in disc_df.columns:
@@ -238,11 +238,11 @@ class ReportGenerator:
         disc_df = disc_df.copy()
         num_col = 'number' if 'number' in disc_df.columns else 'sys_id'
         task_col = 'u_certification_task' if 'u_certification_task' in disc_df.columns else 'linked_task'
-        cat_col = 'u_issue_category' if 'u_issue_category' in disc_df.columns else 'category'
-        field_col = 'u_field' if 'u_field' in disc_df.columns else ('u_field_name' if 'u_field_name' in disc_df.columns else 'field')
+        cat_col = 'u_fcb_task_type' if 'u_fcb_task_type' in disc_df.columns else ('u_issue_category' if 'u_issue_category' in disc_df.columns else 'category')
+        field_col = 'short_description' if 'short_description' in disc_df.columns else ('u_field' if 'u_field' in disc_df.columns else ('u_field_name' if 'u_field_name' in disc_df.columns else 'field'))
         state_col = 'u_status' if 'u_status' in disc_df.columns else ('state' if 'state' in disc_df.columns else 'status')
         created_col = 'sys_created_on' if 'sys_created_on' in disc_df.columns else 'created_at'
-        resolved_col = 'u_resolved_on' if 'u_resolved_on' in disc_df.columns else ('u_resolved_at' if 'u_resolved_at' in disc_df.columns else 'resolved_at')
+        resolved_col = 'closed_at' if 'closed_at' in disc_df.columns else ('u_resolved_on' if 'u_resolved_on' in disc_df.columns else ('u_resolved_at' if 'u_resolved_at' in disc_df.columns else 'resolved_at'))
 
         if created_col in disc_df.columns:
             disc_df['created_dt'] = pd.to_datetime(disc_df[created_col], errors='coerce')

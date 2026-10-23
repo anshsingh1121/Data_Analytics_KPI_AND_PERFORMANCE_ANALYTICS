@@ -200,7 +200,7 @@ with st.sidebar:
                 c_tasks = date_filtered
         
         # Application filter
-        app_col = 'cmdb_ci' if 'cmdb_ci' in c_tasks.columns else 'application'
+        app_col = 'business_service' if 'business_service' in c_tasks.columns else ('cmdb_ci' if 'cmdb_ci' in c_tasks.columns else ('application' if 'application' in c_tasks.columns else None))
         apps = sorted(list(c_tasks[app_col].dropna().unique())) if app_col in c_tasks.columns else []
         selected_apps = st.multiselect("Application / CI", apps, default=[])
 
@@ -849,9 +849,9 @@ elif page == "All-Quarters Overview":
         timeframe_mode = st.selectbox(
             "Quarter Timeframe Framing Mode:",
             [
-                "Calendar 3-Month Quarter (Full Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec)",
+                "Campaign Window (Spring: May 5–22, Autumn: Oct 5–23)",
                 "Complete Month (Apr 1–30, May 1–31, Jul 1–31, Oct 1–31)",
-                "Campaign Window (May 5–22, Oct 5–23, etc.)"
+                "Calendar 3-Month Quarter (Jan-Mar, Apr-Jun, Jul-Sep, Oct-Dec)"
             ],
             index=0,
             key="all_q_timeframe_mode"
@@ -859,9 +859,32 @@ elif page == "All-Quarters Overview":
     with col_m2:
         st.markdown("""
         <div style="background-color: #F8FAFC; border: 1px solid #CBD5E1; border-radius: 6px; padding: 8px 12px; font-size: 12px; margin-top: 4px;">
-            <b>💡 Notice:</b> If corporate tasks were created across the entire 3 months rather than during narrow campaign dates, choose <b>"Calendar 3-Month Quarter"</b> to process all 3 months of data!
+            <b>🗓️ Corporate Campaign Alignment:</b> Q1 corresponds to the Spring Campaign (May 5–22, 2026 / Apr 7–25, 2025) and Q4 to the Autumn Campaign (Oct 5–23, 2026 / Oct 6–23, 2025). Q2 is aliased to Spring, and Q3 had no 2026 run.
         </div>
         """, unsafe_allow_html=True)
+
+    preset_name = "Campaign Window" if "Campaign" in timeframe_mode else ("Complete Month" if "Complete" in timeframe_mode else "Calendar 3-Month Quarter")
+
+    with st.expander("⚙️ **Quarter Date Ranges & Manual Overrides (Optional)**", expanded=False):
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown("##### **2026 Campaign Dates**")
+            d_q1_26_s, d_q1_26_e = get_default_dates(2026, "Q1", preset_name)
+            d_q4_26_s, d_q4_26_e = get_default_dates(2026, "Q4", preset_name)
+            col_a1, col_a2 = st.columns(2)
+            ov_26_q1_s = col_a1.date_input("2026 Q1 (Spring) Start", value=d_q1_26_s, key="ov_26_q1_s")
+            ov_26_q1_e = col_a2.date_input("2026 Q1 (Spring) End", value=d_q1_26_e, key="ov_26_q1_e")
+            ov_26_q4_s = col_a1.date_input("2026 Q4 (Autumn) Start", value=d_q4_26_s, key="ov_26_q4_s")
+            ov_26_q4_e = col_a2.date_input("2026 Q4 (Autumn) End", value=d_q4_26_e, key="ov_26_q4_e")
+        with c2:
+            st.markdown("##### **2025 Campaign Dates**")
+            d_q1_25_s, d_q1_25_e = get_default_dates(2025, "Q1", preset_name)
+            d_q4_25_s, d_q4_25_e = get_default_dates(2025, "Q4", preset_name)
+            col_b1, col_b2 = st.columns(2)
+            ov_25_q1_s = col_b1.date_input("2025 Q1 (Spring) Start", value=d_q1_25_s, key="ov_25_q1_s")
+            ov_25_q1_e = col_b2.date_input("2025 Q1 (Spring) End", value=d_q1_25_e, key="ov_25_q1_e")
+            ov_25_q4_s = col_b1.date_input("2025 Q4 (Autumn) Start", value=d_q4_25_s, key="ov_25_q4_s")
+            ov_25_q4_e = col_b2.date_input("2025 Q4 (Autumn) End", value=d_q4_25_e, key="ov_25_q4_e")
 
     target_quarters = ['Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025', 'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026']
     
@@ -880,16 +903,24 @@ elif page == "All-Quarters Overview":
         ('kpi_12_sla_achievement', 'Final SLA Achievement %', '%')
     ]
 
-    preset_name = "Calendar 3-Month Quarter" if "Calendar" in timeframe_mode else ("Campaign Window" if "Campaign" in timeframe_mode else "Complete Month")
+    # Date mapping dictionary respecting manual overrides
+    custom_dates = {
+        'Q1-2026': (ov_26_q1_s, ov_26_q1_e),
+        'Q2-2026': (ov_26_q1_s, ov_26_q1_e),
+        'Q3-2026': get_default_dates(2026, "Q3", preset_name),
+        'Q4-2026': (ov_26_q4_s, ov_26_q4_e),
+        'Q1-2025': (ov_25_q1_s, ov_25_q1_e),
+        'Q2-2025': (ov_25_q1_s, ov_25_q1_e),
+        'Q3-2025': get_default_dates(2025, "Q3", preset_name),
+        'Q4-2025': (ov_25_q4_s, ov_25_q4_e)
+    }
 
     if tasks_df is not None and not tasks_df.empty:
-        # Compute dynamically for all 8 quarters using the selected preset
+        # Compute dynamically for all 8 quarters using the selected dates
         quarterly_data = {}
         quarter_task_counts = {}
         for q in target_quarters:
-            yr = int(q.split('-')[1])
-            q_code = q.split('-')[0]
-            s_d, e_d = get_default_dates(yr, q_code, preset_name)
+            s_d, e_d = custom_dates.get(q, get_default_dates(int(q.split('-')[1]), q.split('-')[0], preset_name))
             k_res, t_res, d_res, m_res = get_quarter_kpis(tasks_df, disc_df, q, start_date=s_d, end_date=e_d)
             quarterly_data[q] = k_res
             quarter_task_counts[q] = {
@@ -928,7 +959,10 @@ elif page == "All-Quarters Overview":
             for i, q in enumerate(target_quarters):
                 info = quarter_task_counts[q]
                 with c_cols[i % 4]:
-                    st.markdown(f"**{q}:** {info['count']:,} tasks")
+                    if info['count'] > 0:
+                        st.markdown(f"**{q}:** {info['count']:,} tasks")
+                    else:
+                        st.markdown(f"**{q}:** *0 tasks (No campaign)*")
                     st.caption(f"`{info['start']}` to `{info['end']}` ({info['working_days']} working days)")
 
         st.dataframe(dyn_matrix_df, use_container_width=True, height=450, hide_index=True)
@@ -1101,7 +1135,7 @@ elif page == "Data Quality & Discrepancies":
     st.markdown("---")
     col_l, col_r = st.columns(2)
 
-    cat_col = 'u_issue_category' if 'u_issue_category' in c_disc.columns else 'category'
+    cat_col = 'u_fcb_task_type' if 'u_fcb_task_type' in c_disc.columns else ('u_issue_category' if 'u_issue_category' in c_disc.columns else 'category')
     if not c_disc.empty and cat_col in c_disc.columns:
         with col_l:
             fig_cat = px.pie(c_disc, names=cat_col, title="Discrepancies by Failure Category", color_discrete_sequence=px.colors.qualitative.Set2)
@@ -1109,7 +1143,7 @@ elif page == "Data Quality & Discrepancies":
             st.plotly_chart(fig_cat, use_container_width=True)
 
         with col_r:
-            field_col = 'u_field' if 'u_field' in c_disc.columns else 'field'
+            field_col = 'short_description' if 'short_description' in c_disc.columns else ('u_field' if 'u_field' in c_disc.columns else 'field')
             if field_col in c_disc.columns:
                 field_counts = c_disc[field_col].value_counts().reset_index()
                 field_counts.columns = ['Field Name', 'Count']
@@ -1117,7 +1151,7 @@ elif page == "Data Quality & Discrepancies":
                 st.plotly_chart(fig_field, use_container_width=True)
 
     st.subheader("Discrepancy Records Detail Table")
-    display_cols = [c for c in ['number', 'u_certification_task', 'u_application', 'u_field', 'u_issue_category', 'u_status', 'sys_created_on', 'u_resolved_on'] if c in c_disc.columns]
+    display_cols = [c for c in ['number', 'sys_id', 'u_certification_task', 'business_service', 'u_application', 'short_description', 'u_field', 'u_fcb_task_type', 'u_issue_category', 'state', 'u_status', 'sys_created_on', 'closed_at', 'u_resolved_on'] if c in c_disc.columns]
     st.dataframe(c_disc[display_cols].head(500), use_container_width=True, height=350, hide_index=True)
 
 # -----------------------------------------------------------------------------

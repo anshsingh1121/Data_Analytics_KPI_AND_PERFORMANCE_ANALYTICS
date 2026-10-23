@@ -433,50 +433,58 @@ def cmd_pipeline(args):
 
         for q_name in target_quarters:
             q_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(q_name))
-            match_cycles = alias_map.get(q_name, [q_name])
-            q_tasks = tasks_resolved[tasks_resolved['certification_cycle'].isin(match_cycles)].copy()
+            date_col = 'sys_created_on' if 'sys_created_on' in tasks_resolved.columns else ('created_at' if 'created_at' in tasks_resolved.columns else None)
             
-            # Enforce exact date boundaries for date-wise precision with fallback
-            date_col = 'sys_created_on' if 'sys_created_on' in q_tasks.columns else ('created_at' if 'created_at' in q_tasks.columns else None)
-            if date_col and q_meta.get('start_date') and q_meta.get('end_date'):
-                s_date = pd.to_datetime(q_meta['start_date']).date()
-                e_date = pd.to_datetime(q_meta['end_date']).date()
-                t_dates = pd.to_datetime(q_tasks[date_col], errors='coerce').dt.date
-                date_filtered = q_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
-                if not date_filtered.empty:
-                    q_tasks = date_filtered
-                else:
-                    # If narrow campaign window has 0 tasks, fallback to calendar quarter dates
-                    parts = q_name.split('-')
-                    q_num, yr = parts[0], int(parts[1])
-                    cal_bounds = {
-                        'Q1': (date(yr, 1, 1), date(yr, 3, 31)),
-                        'Q2': (date(yr, 4, 1), date(yr, 6, 30)),
-                        'Q3': (date(yr, 7, 1), date(yr, 9, 30)),
-                        'Q4': (date(yr, 10, 1), date(yr, 12, 31))
-                    }
-                    cal_s, cal_e = cal_bounds.get(q_num, (s_date, e_date))
-                    all_t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
-                    cal_filtered = tasks_resolved[(all_t_dates >= cal_s) & (all_t_dates <= cal_e)].copy()
-                    if not cal_filtered.empty:
-                        q_tasks = cal_filtered
-                        q_meta['start_date'] = str(cal_s)
-                        q_meta['end_date'] = str(cal_e)
-                        q_meta['final_deadline'] = str(cal_e)
-                        w_days = cycle_mgr.calculate_working_days(cal_s, cal_e)
-                        q_meta['total_working_days'] = max(1, w_days)
+            s_date = pd.to_datetime(q_meta.get('start_date')).date() if q_meta.get('start_date') else None
+            e_date = pd.to_datetime(q_meta.get('end_date')).date() if q_meta.get('end_date') else None
+            
+            q_tasks = pd.DataFrame()
+            # Priority 1: Filter directly by configured campaign dates on task creation date
+            if date_col and s_date and e_date:
+                t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
+                q_tasks = tasks_resolved[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+            
+            # Priority 2: Fallback to cycle activity tag if date filter gave 0 records
+            if q_tasks.empty:
+                match_cycles = alias_map.get(q_name, [q_name])
+                for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+                    if col_c in tasks_resolved.columns:
+                        matched = tasks_resolved[tasks_resolved[col_c].isin(match_cycles)].copy()
+                        if not matched.empty:
+                            q_tasks = matched
+                            break
+            
+            # Priority 3: Fallback to calendar 3-month quarter if still empty
+            if q_tasks.empty and date_col:
+                parts = q_name.split('-')
+                q_num, yr = parts[0], int(parts[1])
+                cal_bounds = {
+                    'Q1': (date(yr, 1, 1), date(yr, 3, 31)),
+                    'Q2': (date(yr, 4, 1), date(yr, 6, 30)),
+                    'Q3': (date(yr, 7, 1), date(yr, 9, 30)),
+                    'Q4': (date(yr, 10, 1), date(yr, 12, 31))
+                }
+                cal_s, cal_e = cal_bounds.get(q_num, (s_date, e_date))
+                all_t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
+                cal_filtered = tasks_resolved[(all_t_dates >= cal_s) & (all_t_dates <= cal_e)].copy()
+                if not cal_filtered.empty:
+                    q_tasks = cal_filtered
+                    q_meta['start_date'] = str(cal_s)
+                    q_meta['end_date'] = str(cal_e)
+                    q_meta['final_deadline'] = str(cal_e)
+                    s_date, e_date = cal_s, cal_e
 
-            q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy()
+            q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy() if not q_tasks.empty else pd.DataFrame()
             
-            w_days = q_meta.get('total_working_days', 15)
+            w_days = cycle_mgr.calculate_working_days(s_date, e_date) if s_date and e_date else q_meta.get('total_working_days', 15)
             if q_meta.get('is_active') and q_meta.get('elapsed_working_days'):
                 w_days = q_meta['elapsed_working_days']
 
             q_kpis = kpi_engine.calculate_all_kpis(
                 q_tasks, q_disc,
                 working_days=max(1, w_days),
-                as_of_date=q_meta.get('end_date'),
-                final_deadline=q_meta.get('final_deadline')
+                as_of_date=str(e_date) if e_date else q_meta.get('end_date'),
+                final_deadline=str(e_date) if e_date else q_meta.get('final_deadline')
             )
             quarterly_results[q_name] = {
                 'meta': q_meta,
