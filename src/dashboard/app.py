@@ -98,6 +98,41 @@ def load_processed_data():
     if tasks_path.exists() and disc_path.exists():
         tasks = pd.read_csv(tasks_path)
         disc = pd.read_csv(disc_path)
+
+        # Consistent campaign window end dates for due_date imputation
+        if tasks is not None and not tasks.empty:
+            campaign_deadlines = {
+                'Q1-2026': '2026-05-22 23:59:59',
+                'Q2-2026': '2026-05-22 23:59:59',
+                'Q3-2026': '2026-07-31 23:59:59',
+                'Q4-2026': '2026-10-23 23:59:59',
+                'Q1-2025': '2025-04-25 23:59:59',
+                'Q2-2025': '2025-04-25 23:59:59',
+                'Q3-2025': '2025-09-30 23:59:59',
+                'Q4-2025': '2025-10-23 23:59:59',
+            }
+            cycle_col = 'certification_cycle' if 'certification_cycle' in tasks.columns else ('u_certification_activity' if 'u_certification_activity' in tasks.columns else None)
+            mapped = tasks[cycle_col].map(campaign_deadlines) if cycle_col else pd.Series(index=tasks.index, dtype='object')
+            
+            date_col = 'sys_created_on' if 'sys_created_on' in tasks.columns else ('created_at' if 'created_at' in tasks.columns else None)
+            if date_col and mapped.isna().any():
+                dates = pd.to_datetime(tasks[date_col], errors='coerce')
+                for idx in tasks[mapped.isna()].index:
+                    d = dates.loc[idx]
+                    if pd.notna(d):
+                        if d.year == 2026 and d.month <= 5: mapped.loc[idx] = '2026-05-22 23:59:59'
+                        elif d.year == 2026 and d.month >= 10: mapped.loc[idx] = '2026-10-23 23:59:59'
+                        elif d.year == 2025 and d.month <= 4: mapped.loc[idx] = '2025-04-25 23:59:59'
+                        elif d.year == 2025 and d.month >= 10: mapped.loc[idx] = '2025-10-23 23:59:59'
+                        else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-28 23:59:59"
+            
+            mapped = mapped.fillna('2026-10-23 23:59:59')
+            if 'due_date' not in tasks.columns:
+                tasks['due_date'] = pd.to_datetime(mapped)
+            else:
+                parsed_due = pd.to_datetime(tasks['due_date'], errors='coerce')
+                tasks['due_date'] = parsed_due.fillna(pd.to_datetime(mapped))
+
         return tasks, disc
     return None, None
 
@@ -335,6 +370,15 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         match_cycles = alias_map.get(q_name, [q_name])
         q_t = df_tasks[df_tasks[q_col].isin(match_cycles)].copy()
 
+    # CRITICAL: Impute/set due_date to window end date at 23:59:59 across all records
+    window_deadline = pd.to_datetime(f"{e_date} 23:59:59")
+    if not q_t.empty:
+        if 'due_date' not in q_t.columns:
+            q_t['due_date'] = window_deadline
+        else:
+            parsed_due = pd.to_datetime(q_t['due_date'], errors='coerce')
+            q_t['due_date'] = parsed_due.fillna(window_deadline)
+
     q_d = df_disc[df_disc['u_certification_task'].isin(q_t['sys_id'])].copy() if df_disc is not None and not q_t.empty else pd.DataFrame()
     w_days = cycle_mgr.calculate_working_days(s_date, e_date)
     
@@ -342,7 +386,7 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
     effective_meta['name'] = q_name
     effective_meta['start_date'] = str(s_date)
     effective_meta['end_date'] = str(e_date)
-    effective_meta['final_deadline'] = str(e_date)
+    effective_meta['final_deadline'] = f"{e_date} 23:59:59"
     effective_meta['total_working_days'] = max(1, w_days)
     effective_meta['elapsed_working_days'] = max(1, w_days)
     
@@ -350,16 +394,24 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         q_t, q_d,
         working_days=max(1, w_days),
         as_of_date=str(e_date),
-        final_deadline=str(e_date)
+        final_deadline=f"{e_date} 23:59:59"
     )
     return res_kpis, q_t, q_d, effective_meta
+
+# Ensure c_tasks has valid due_date matching selected cycle end date
+if not c_tasks.empty and curr_meta.get('end_date'):
+    curr_deadline = pd.to_datetime(f"{curr_meta['end_date']} 23:59:59")
+    if 'due_date' not in c_tasks.columns:
+        c_tasks['due_date'] = curr_deadline
+    else:
+        c_tasks['due_date'] = pd.to_datetime(c_tasks['due_date'], errors='coerce').fillna(curr_deadline)
 
 # Calculate active KPIs for filtered dataset
 kpis = kpi_engine.calculate_all_kpis(
     c_tasks, c_disc,
     working_days=curr_meta['elapsed_working_days'] if curr_meta.get('is_active') else curr_meta.get('total_working_days', 15),
     as_of_date=curr_meta.get('end_date', '2026-10-23'),
-    final_deadline=curr_meta['final_deadline']
+    final_deadline=f"{curr_meta.get('end_date', '2026-10-23')} 23:59:59"
 )
 
 # Previous cycle tasks for comparison deltas
@@ -381,6 +433,13 @@ if date_col and prev_meta.get('start_date') and prev_meta.get('end_date'):
     prev_filtered = prev_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
     if not prev_filtered.empty:
         prev_tasks = prev_filtered
+
+if not prev_tasks.empty and prev_meta.get('end_date'):
+    prev_deadline = pd.to_datetime(f"{prev_meta['end_date']} 23:59:59")
+    if 'due_date' not in prev_tasks.columns:
+        prev_tasks['due_date'] = prev_deadline
+    else:
+        prev_tasks['due_date'] = pd.to_datetime(prev_tasks['due_date'], errors='coerce').fillna(prev_deadline)
 prev_disc = disc_df[disc_df['u_certification_task'].isin(prev_tasks['sys_id'])].copy() if disc_df is not None else pd.DataFrame()
 
 prev_kpis = kpi_engine.calculate_all_kpis(

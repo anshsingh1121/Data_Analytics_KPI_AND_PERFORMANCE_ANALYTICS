@@ -133,6 +133,47 @@ def test_illustrative_test_fixture_comparisons(illustrative_test_data):
     daily_rel_inc = ((curr["daily_closure"] - prev["daily_closure"]) / prev["daily_closure"]) * 100
     assert round(daily_rel_inc, 1) == 19.2
 
+def test_missing_due_date_imputation(mock_tasks_df, mock_discrepancies_df):
+    """
+    Verifies that when due_date is absent or null (as in corporate ServiceNow data),
+    the system automatically imputes the campaign window end date (e.g. 2026-05-22 23:59:59)
+    and computes valid percentages for On-Time Completion (KPI 3) and Last-Minute Closure (KPI 10).
+    """
+    engine = KPIEngine()
+    
+    # Create dataset with NO due_date column
+    df_no_due = mock_tasks_df.drop(columns=['due_date']).copy()
+    assert 'due_date' not in df_no_due.columns
+    
+    # Calculate all KPIs passing campaign window deadline
+    results = engine.calculate_all_kpis(
+        df_no_due,
+        mock_discrepancies_df,
+        working_days=14,
+        as_of_date='2026-05-22',
+        final_deadline='2026-05-22'
+    )
+    
+    # KPI 3 must be available and have a valid float value
+    kpi_3 = results['kpi_3_on_time_completion']
+    assert kpi_3['available'] is True
+    assert kpi_3['value'] is not None
+    assert isinstance(kpi_3['value'], (int, float))
+    assert kpi_3['denominator'] > 0
+    
+    # KPI 10 must be available and have a valid float value (not None!)
+    kpi_10 = results['kpi_10_last_minute_closure']
+    assert kpi_10['available'] is True
+    assert kpi_10['value'] is not None
+    assert isinstance(kpi_10['value'], (int, float))
+    assert kpi_10['denominator'] > 0
+
+    # KPI 12 must be available and have a valid float value
+    kpi_12 = results['kpi_12_sla_achievement']
+    assert kpi_12['available'] is True
+    assert kpi_12['value'] is not None
+    assert isinstance(kpi_12['value'], (int, float))
+
 def test_daily_closure_day_fixtures(illustrative_test_data):
     """Verifies day 1-5 closure difference fixtures from Section 13."""
     days = illustrative_test_data["daily_closure_days"]

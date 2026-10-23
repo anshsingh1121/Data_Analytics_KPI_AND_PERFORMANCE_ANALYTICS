@@ -156,10 +156,11 @@ class KPIEngine:
     # KPI 3: On-Time Completion %
     # Formula: Tasks Completed On or Before Due Date / Completed Eligible Tasks With Valid Due Dates * 100
     # =========================================================================
-    def kpi_3_on_time_completion(self, tasks_df: pd.DataFrame) -> Dict[str, Any]:
+    def kpi_3_on_time_completion(self, tasks_df: pd.DataFrame, default_due_date: Optional[Any] = None) -> Dict[str, Any]:
         """
         KPI 3: On-Time Completion %
         Measures punctuality of completed tasks against assigned due date.
+        If due_date is missing or null, falls back to default_due_date (e.g. campaign window end date).
         """
         name = "On-Time Completion %"
         unit = "%"
@@ -168,6 +169,7 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
+        tasks_df = tasks_df.copy()
         state_col = self._col(tasks_df, ['state', 'status'])
         closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
         due_col = self._col(tasks_df, ['due_date', 'u_due_date'])
@@ -179,7 +181,18 @@ class KPIEngine:
         if completed.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["No completed tasks"])
 
-        if not due_col or not closed_col or due_col not in tasks_df.columns or closed_col not in tasks_df.columns:
+        # Fallback to campaign window deadline if due date is missing or null
+        if default_due_date is not None:
+            d_due = self._to_dt(default_due_date)
+            if d_due.hour == 0 and d_due.minute == 0 and d_due.second == 0:
+                d_due = d_due + pd.Timedelta(hours=23, minutes=59, seconds=59)
+            if not due_col or due_col not in completed.columns:
+                completed['due_date'] = d_due
+                due_col = 'due_date'
+            else:
+                completed[due_col] = pd.to_datetime(completed[due_col], errors='coerce').fillna(d_due)
+
+        if not due_col or not closed_col or due_col not in completed.columns or closed_col not in completed.columns:
             return self._create_kpi_result(name, None, 0, 0, len(completed), unit, desired_trend, False, warnings=["Due date or closed date column missing"])
 
         valid = completed.dropna(subset=[due_col, closed_col]).copy()
@@ -498,11 +511,18 @@ class KPIEngine:
     # A. Near-deadline closure share (<=1d)
     # B. Near-deadline open backlog (<=1d)
     # =========================================================================
-    def kpi_10_last_minute_closure(self, tasks_df: pd.DataFrame, window_days: int = 1, as_of_date: Optional[Any] = None) -> Dict[str, Any]:
+    def kpi_10_last_minute_closure(
+        self,
+        tasks_df: pd.DataFrame,
+        window_days: int = 1,
+        as_of_date: Optional[Any] = None,
+        default_due_date: Optional[Any] = None
+    ) -> Dict[str, Any]:
         """
         KPI 10: Last-Minute Closure %
         A: Completed within final N days before due date.
         B: Open tasks with due date falling within next N days.
+        If due_date is missing or null, falls back to default_due_date or as_of_date (e.g. campaign window end date).
         """
         name = "Last-Minute Closure %"
         unit = "%"
@@ -511,12 +531,25 @@ class KPIEngine:
         if tasks_df is None or tasks_df.empty:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Empty tasks dataset"])
 
+        tasks_df = tasks_df.copy()
         state_col = self._col(tasks_df, ['state', 'status'])
         closed_col = self._col(tasks_df, ['closed_at', 'completed_at', 'sys_updated_on'])
         due_col = self._col(tasks_df, ['due_date', 'u_due_date'])
 
         if not state_col or state_col not in tasks_df.columns:
             return self._create_kpi_result(name, None, 0, 0, 0, unit, desired_trend, False, warnings=["Task state column missing"])
+
+        # Fallback to campaign deadline if due_date missing or has NaNs
+        fallback_dt = default_due_date or as_of_date
+        if fallback_dt is not None:
+            d_due = self._to_dt(fallback_dt)
+            if d_due.hour == 0 and d_due.minute == 0 and d_due.second == 0:
+                d_due = d_due + pd.Timedelta(hours=23, minutes=59, seconds=59)
+            if not due_col or due_col not in tasks_df.columns:
+                tasks_df['due_date'] = d_due
+                due_col = 'due_date'
+            else:
+                tasks_df[due_col] = pd.to_datetime(tasks_df[due_col], errors='coerce').fillna(d_due)
 
         completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
         if not due_col or not closed_col or due_col not in tasks_df.columns or closed_col not in tasks_df.columns:
@@ -535,14 +568,14 @@ class KPIEngine:
             
             # Difference in days between due date and closure
             days_before_due = (valid['due_dt'] - valid['closed_dt']).dt.total_seconds() / 86400.0
-            # Within window (e.g. 0 to 5 days before due date)
+            # Within window (e.g. 0 to window_days before due date)
             near_deadline = valid[(days_before_due >= 0) & (days_before_due <= window_days)]
             near_deadline_closures = len(near_deadline)
 
         value = (near_deadline_closures / denominator * 100.0) if denominator > 0 else 0.0
 
         # Part B: Near-deadline open backlog
-        as_of = self._to_dt(as_of_date) if as_of_date else self._to_dt('2026-10-23')
+        as_of = self._to_dt(as_of_date) if as_of_date else (self._to_dt(default_due_date) if default_due_date else self._to_dt('2026-10-23'))
         open_statuses = ["Open", "Work in Progress", "Pending Review", "Pending"]
         open_tasks = tasks_df[tasks_df[state_col].isin(open_statuses)].copy()
         
@@ -674,6 +707,8 @@ class KPIEngine:
             return self._create_kpi_result(name, 0.0, 0, 0, excluded_count, unit, desired_trend, True)
 
         deadline = self._to_dt(final_deadline) if final_deadline else self._to_dt('2026-12-23')
+        if deadline.hour == 0 and deadline.minute == 0 and deadline.second == 0:
+            deadline = deadline + pd.Timedelta(hours=23, minutes=59, seconds=59)
 
         completed = eligible[eligible[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
         
@@ -715,17 +750,39 @@ class KPIEngine:
         final_deadline: Optional[Any] = None
     ) -> Dict[str, Any]:
         """Calculates all 12 Business KPIs and returns consolidated dictionary."""
+        effective_tasks = tasks_df
+        effective_deadline = final_deadline or as_of_date
+        
+        if effective_tasks is not None and not effective_tasks.empty and effective_deadline is not None:
+            effective_tasks = effective_tasks.copy()
+            d_due = self._to_dt(effective_deadline)
+            if d_due.hour == 0 and d_due.minute == 0 and d_due.second == 0:
+                d_due = d_due + pd.Timedelta(hours=23, minutes=59, seconds=59)
+            
+            due_col = self._col(effective_tasks, ['due_date', 'u_due_date'])
+            if not due_col or due_col not in effective_tasks.columns:
+                effective_tasks['due_date'] = d_due
+            else:
+                effective_tasks[due_col] = pd.to_datetime(effective_tasks[due_col], errors='coerce').fillna(d_due)
+                if due_col != 'due_date':
+                    effective_tasks['due_date'] = effective_tasks[due_col]
+
         results = {}
-        results['kpi_1_certification_completion'] = self.kpi_1_certification_completion(tasks_df)
-        results['kpi_2_daily_closure_rate'] = self.kpi_2_daily_closure_rate(tasks_df, working_days)
-        results['kpi_3_on_time_completion'] = self.kpi_3_on_time_completion(tasks_df)
-        results['kpi_4_avg_completion_time'] = self.kpi_4_avg_completion_time(tasks_df)
-        results['kpi_5_discrepancy_rate'] = self.kpi_5_discrepancy_rate(tasks_df, disc_df)
-        results['kpi_6_data_accuracy'] = self.kpi_6_data_accuracy(tasks_df, disc_df)
-        results['kpi_7_rejection_rate'] = self.kpi_7_rejection_rate(tasks_df)
-        results['kpi_8_backlog_aging'] = self.kpi_8_backlog_aging(tasks_df, as_of_date)
-        results['kpi_9_productivity'] = self.kpi_9_productivity(tasks_df, working_days)
-        results['kpi_10_last_minute_closure'] = self.kpi_10_last_minute_closure(tasks_df, as_of_date=as_of_date)
+        results['kpi_1_certification_completion'] = self.kpi_1_certification_completion(effective_tasks)
+        results['kpi_2_daily_closure_rate'] = self.kpi_2_daily_closure_rate(effective_tasks, working_days)
+        results['kpi_3_on_time_completion'] = self.kpi_3_on_time_completion(effective_tasks, default_due_date=effective_deadline)
+        results['kpi_4_avg_completion_time'] = self.kpi_4_avg_completion_time(effective_tasks)
+        results['kpi_5_discrepancy_rate'] = self.kpi_5_discrepancy_rate(effective_tasks, disc_df)
+        results['kpi_6_data_accuracy'] = self.kpi_6_data_accuracy(effective_tasks, disc_df)
+        results['kpi_7_rejection_rate'] = self.kpi_7_rejection_rate(effective_tasks)
+        results['kpi_8_backlog_aging'] = self.kpi_8_backlog_aging(effective_tasks, as_of_date)
+        results['kpi_9_productivity'] = self.kpi_9_productivity(effective_tasks, working_days)
+        results['kpi_10_last_minute_closure'] = self.kpi_10_last_minute_closure(
+            effective_tasks,
+            window_days=1,
+            as_of_date=as_of_date,
+            default_due_date=effective_deadline
+        )
         results['kpi_11_exception_resolution'] = self.kpi_11_exception_resolution(disc_df)
-        results['kpi_12_sla_achievement'] = self.kpi_12_sla_achievement(tasks_df, final_deadline)
+        results['kpi_12_sla_achievement'] = self.kpi_12_sla_achievement(effective_tasks, effective_deadline)
         return results

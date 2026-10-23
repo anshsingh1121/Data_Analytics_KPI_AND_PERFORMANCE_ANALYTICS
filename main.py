@@ -393,6 +393,39 @@ def cmd_pipeline(args):
         task_cycle_map = dict(zip(tasks_resolved['sys_id'], tasks_resolved['certification_cycle']))
         disc_resolved['certification_cycle'] = disc_resolved['u_certification_task'].map(task_cycle_map).fillna('Other')
 
+        # Impute due_date with exact campaign window end dates (23:59:59) if missing or null
+        campaign_deadlines = {
+            'Q1-2026': '2026-05-22 23:59:59',
+            'Q2-2026': '2026-05-22 23:59:59',
+            'Q3-2026': '2026-07-31 23:59:59',
+            'Q4-2026': '2026-10-23 23:59:59',
+            'Q1-2025': '2025-04-25 23:59:59',
+            'Q2-2025': '2025-04-25 23:59:59',
+            'Q3-2025': '2025-09-30 23:59:59',
+            'Q4-2025': '2025-10-23 23:59:59',
+        }
+        cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_resolved.columns else None
+        mapped_deadlines = tasks_resolved[cycle_col].map(campaign_deadlines) if cycle_col else pd.Series(index=tasks_resolved.index, dtype='object')
+        
+        date_col = 'sys_created_on' if 'sys_created_on' in tasks_resolved.columns else ('created_at' if 'created_at' in tasks_resolved.columns else None)
+        if date_col and mapped_deadlines.isna().any():
+            dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce')
+            for idx in tasks_resolved[mapped_deadlines.isna()].index:
+                d = dates.loc[idx]
+                if pd.notna(d):
+                    if d.year == 2026 and d.month <= 5: mapped_deadlines.loc[idx] = '2026-05-22 23:59:59'
+                    elif d.year == 2026 and d.month >= 10: mapped_deadlines.loc[idx] = '2026-10-23 23:59:59'
+                    elif d.year == 2025 and d.month <= 4: mapped_deadlines.loc[idx] = '2025-04-25 23:59:59'
+                    elif d.year == 2025 and d.month >= 10: mapped_deadlines.loc[idx] = '2025-10-23 23:59:59'
+                    else: mapped_deadlines.loc[idx] = f"{d.year}-{d.month:02d}-28 23:59:59"
+        
+        mapped_deadlines = mapped_deadlines.fillna('2026-10-23 23:59:59')
+        if 'due_date' not in tasks_resolved.columns:
+            tasks_resolved['due_date'] = pd.to_datetime(mapped_deadlines)
+        else:
+            parsed_due = pd.to_datetime(tasks_resolved['due_date'], errors='coerce')
+            tasks_resolved['due_date'] = parsed_due.fillna(pd.to_datetime(mapped_deadlines))
+
         os.makedirs('data/processed', exist_ok=True)
         tasks_resolved.to_csv('data/processed/cert_tasks_processed.csv', index=False)
         disc_resolved.to_csv('data/processed/discrepancies_processed.csv', index=False)
@@ -474,6 +507,13 @@ def cmd_pipeline(args):
                     q_meta['final_deadline'] = str(cal_e)
                     s_date, e_date = cal_s, cal_e
 
+            due_deadline = pd.to_datetime(f"{e_date} 23:59:59") if e_date else None
+            if not q_tasks.empty and due_deadline:
+                if 'due_date' not in q_tasks.columns:
+                    q_tasks['due_date'] = due_deadline
+                else:
+                    q_tasks['due_date'] = pd.to_datetime(q_tasks['due_date'], errors='coerce').fillna(due_deadline)
+
             q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy() if not q_tasks.empty else pd.DataFrame()
             
             w_days = cycle_mgr.calculate_working_days(s_date, e_date) if s_date and e_date else q_meta.get('total_working_days', 15)
@@ -484,7 +524,7 @@ def cmd_pipeline(args):
                 q_tasks, q_disc,
                 working_days=max(1, w_days),
                 as_of_date=str(e_date) if e_date else q_meta.get('end_date'),
-                final_deadline=str(e_date) if e_date else q_meta.get('final_deadline')
+                final_deadline=f"{e_date} 23:59:59" if e_date else q_meta.get('final_deadline')
             )
             quarterly_results[q_name] = {
                 'meta': q_meta,
