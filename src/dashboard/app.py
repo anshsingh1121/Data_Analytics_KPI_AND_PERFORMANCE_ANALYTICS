@@ -971,6 +971,74 @@ elif page == "🔌 ServiceNow Integration Status":
         st.info(f"**Target Instance:** `{api_cfg.get('base_url') or 'Configured via .env'}`")
 
     st.markdown("---")
+    st.subheader("⚡ Live Operations & Execution Pipeline")
+    st.markdown("Test your ServiceNow connection endpoint or execute the end-to-end data extraction and reporting pipeline.")
+
+    col_btn1, col_btn2 = st.columns(2)
+    with col_btn1:
+        btn_test = st.button("🔍 Test ServiceNow Connection & Tables", use_container_width=True)
+    with col_btn2:
+        btn_pipeline = st.button("🚀 Execute Full Analytics Pipeline", type="primary", use_container_width=True)
+
+    use_cached = st.checkbox(
+        "Use local cache if available (skip API re-download)",
+        value=False,
+        help="When checked, re-executes calculations and regenerates reports using local records without calling the ServiceNow API."
+    )
+
+    if btn_test:
+        if not api_cfg.get('base_url'):
+            st.warning("⚠️ No `API_BASE_URL` found in `.env`. Operating in demo/offline mode with local verified schemas.")
+            t_t_name = loader.settings.get('provider', {}).get('tables', {}).get('cert_task', 'cert_task')
+            d_t_name = loader.settings.get('provider', {}).get('tables', {}).get('failed_data_certifications', 'u_failed_data_certifications')
+            st.info(f"Target Tables: Task Table = `{t_t_name}`, Discrepancy Table = `{d_t_name}`")
+        else:
+            with st.spinner("Connecting to ServiceNow and testing endpoint diagnostics..."):
+                try:
+                    from main import get_service_now_client
+                    from src.discovery.connection_diagnostics import ConnectionDiagnostics
+
+                    client = get_service_now_client(loader)
+                    diagnostics = ConnectionDiagnostics(client, loader.settings.get('provider', {}))
+                    res = diagnostics.run_diagnostics()
+
+                    t1 = diagnostics.task_table
+                    t2 = diagnostics.disc_table
+                    c_tasks_count = client.get_record_count(t1) if res.get('task_table_access') else -1
+                    c_disc_count = client.get_record_count(t2) if res.get('disc_table_access') else -1
+
+                    st.markdown("##### 🔬 Connection Diagnostics Summary:")
+                    r1, r2, r3, r4 = st.columns(4)
+                    r1.metric("API Endpoint", "REACHABLE" if res.get('api_connectivity') else "FAILED")
+                    r2.metric("Authentication", "AUTHORIZED" if res.get('auth_valid') else "UNAUTHORIZED")
+                    r3.metric(f"Tasks (`{t1}`)", f"{c_tasks_count:,} records" if c_tasks_count >= 0 else ("ACCESSIBLE" if res.get('task_table_access') else "NO ACCESS"))
+                    r4.metric(f"Discrepancies (`{t2}`)", f"{c_disc_count:,} records" if c_disc_count >= 0 else ("ACCESSIBLE" if res.get('disc_table_access') else "NO ACCESS"))
+
+                    if res.get('api_connectivity') and res.get('auth_valid'):
+                        st.success(f"✅ Successfully connected and authenticated to `{client.instance_url}`!")
+                    else:
+                        st.error("❌ Connection failed. Check instance URL, corporate VPN, or credentials.")
+                        for s in res.get('suggestions', []):
+                            st.warning(f"• {s}")
+                except Exception as ex:
+                    st.error(f"Diagnostic error: {ex}")
+
+    if btn_pipeline:
+        with st.spinner(f"Executing full analytics pipeline ({'CACHED' if use_cached else 'LIVE EXTRACTION'})..."):
+            try:
+                from main import cmd_pipeline
+                import argparse
+                res_code = cmd_pipeline(argparse.Namespace(mode=app_mode, skip_fetch=use_cached))
+                if res_code == 0 or res_code is None:
+                    st.cache_data.clear()
+                    st.success("🎉 Pipeline executed successfully! KPI reports and master matrix refreshed.")
+                    st.rerun()
+                else:
+                    st.error("Pipeline encountered an error during execution. Check terminal logs.")
+            except Exception as ex:
+                st.error(f"Pipeline execution failed: {ex}")
+
+    st.markdown("---")
     st.subheader("📊 Active Dataset Statistics")
     d1, d2, d3 = st.columns(3)
     d1.metric("Processed Tasks Loaded", f"{len(tasks_df):,} records")
