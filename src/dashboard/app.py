@@ -448,6 +448,82 @@ if page == "📊 Executive Overview":
         </div>
         ''', unsafe_allow_html=True)
 
+    st.markdown("---")
+    st.subheader(f"📊 Executive Visual Performance — {selected_cycle}")
+    ch_col1, ch_col2 = st.columns(2)
+
+    with ch_col1:
+        # Visual 1: Daily Closure Trend & Cumulative Velocity
+        trend_analyzer = TrendAnalyzer()
+        daily_series = trend_analyzer.build_working_day_daily_series(
+            c_tasks, curr_meta.get('start_date'), curr_meta.get('end_date'), holidays=cycle_mgr.holidays
+        )
+        if not daily_series.empty:
+            fig_exec_trend = go.Figure()
+            fig_exec_trend.add_trace(go.Bar(
+                x=daily_series['Day_Label'],
+                y=daily_series['Daily_Closures'],
+                name="Daily Closures",
+                marker_color="#2563EB",
+                opacity=0.85
+            ))
+            fig_exec_trend.add_trace(go.Scatter(
+                x=daily_series['Day_Label'],
+                y=daily_series['Cumulative_Pct'],
+                name="Cumulative %",
+                yaxis="y2",
+                mode="lines+markers",
+                line=dict(color="#10B981", width=3)
+            ))
+            fig_exec_trend.update_layout(
+                title=f"{selected_cycle} Daily Closures & Completion Velocity",
+                xaxis_title="Working Day Elapsed",
+                yaxis_title="Tasks Completed",
+                yaxis2=dict(
+                    title="Cumulative % Complete",
+                    overlaying="y",
+                    side="right",
+                    range=[0, 105],
+                    showgrid=False
+                ),
+                height=360,
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            st.plotly_chart(fig_exec_trend, use_container_width=True)
+        else:
+            st.info("Daily closure series unavailable for current filter selection.")
+
+    with ch_col2:
+        # Visual 2: Core KPI Performance vs SLA Benchmark (95%)
+        kpi_bars = [
+            {"KPI": "Completion %", "Score (%)": float(k1['value'] or 0.0)},
+            {"KPI": "On-Time %", "Score (%)": float(k3['value'] or 0.0)},
+            {"KPI": "Clean Pass Rate %", "Score (%)": float(k6['value'] or 0.0)},
+            {"KPI": "Final SLA %", "Score (%)": float(k12.get('value', 0.0) or 0.0)}
+        ]
+        df_kpi_bars = pd.DataFrame(kpi_bars)
+        fig_bench = px.bar(
+            df_kpi_bars,
+            x="Score (%)",
+            y="KPI",
+            orientation="h",
+            text="Score (%)",
+            color="Score (%)",
+            color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
+            range_color=[70, 100]
+        )
+        fig_bench.add_vline(x=95.0, line_dash="dash", line_color="#DC2626", annotation_text="Target: 95%", annotation_position="top right")
+        fig_bench.update_layout(
+            title="Core Operational KPIs vs SLA Target (95%)",
+            xaxis_title="Percentage (%)",
+            xaxis_range=[0, 105],
+            yaxis_title="",
+            height=360,
+            coloraxis_showscale=False
+        )
+        fig_bench.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        st.plotly_chart(fig_bench, use_container_width=True)
+
 # -----------------------------------------------------------------------------
 # PAGE 2: DAILY TRENDS & QUARTER VELOCITY COMPARISON
 # -----------------------------------------------------------------------------
@@ -782,7 +858,35 @@ elif page == "🗓️ Annual Master Matrix (All 4 Quarters)":
         )
 
     st.markdown("---")
-    st.dataframe(matrix_df, use_container_width=True, height=450, hide_index=True)
+    
+    # Visual: All 4 Quarters Performance Comparison Chart
+    q_chart_rows = []
+    for q in target_quarters:
+        c_k = quarterly_data[q]
+        q_chart_rows.append({
+            "Quarter": q,
+            "Completion %": float(c_k.get('kpi_1_certification_completion', {}).get('value') or 0.0),
+            "On-Time %": float(c_k.get('kpi_3_on_time_completion', {}).get('value') or 0.0),
+            "Discrepancy %": float(c_k.get('kpi_5_discrepancy_rate', {}).get('value') or 0.0)
+        })
+    df_q_chart = pd.DataFrame(q_chart_rows)
+    df_q_melt = df_q_chart.melt(id_vars=["Quarter"], var_name="Metric", value_name="Score (%)")
+
+    fig_matrix = px.bar(
+        df_q_melt,
+        x="Quarter",
+        y="Score (%)",
+        color="Metric",
+        barmode="group",
+        color_discrete_map={"Completion %": "#10B981", "On-Time %": "#3B82F6", "Discrepancy %": "#EF4444"},
+        title="Active 4-Quarter Comparison: Completion %, On-Time %, and Discrepancy %"
+    )
+    fig_matrix.add_hline(y=95.0, line_dash="dash", line_color="#059669", annotation_text="Target: 95%")
+    fig_matrix.update_layout(height=350, yaxis_range=[0, 105], legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+    st.plotly_chart(fig_matrix, use_container_width=True)
+
+    st.subheader("📋 Consolidated 4-Quarter Master Table")
+    st.dataframe(matrix_df, use_container_width=True, height=380, hide_index=True)
 
     csv_matrix = matrix_df.to_csv(index=False).encode('utf-8')
     st.download_button(
@@ -815,7 +919,24 @@ elif page == "👥 Certifier Performance Leaderboard":
         c_c4.metric("Average Certifier Run Rate", f"{avg_rate:.1f} tasks/d")
 
         st.markdown("---")
-        st.dataframe(prod_df, use_container_width=True, height=450, hide_index=True)
+        
+        # Visual: Top 10 Certifiers by Workload Throughput
+        cert_col_name = 'Certifier' if 'Certifier' in prod_df.columns else ('assigned_to' if 'assigned_to' in prod_df.columns else prod_df.columns[0])
+        top_10 = prod_df.sort_values(by='Total Assigned', ascending=False).head(10).copy()
+        fig_cert = px.bar(
+            top_10,
+            x='Total Assigned',
+            y=cert_col_name,
+            orientation='h',
+            color='Completed',
+            color_continuous_scale="Blues",
+            title=f"Top 10 Certifiers by Assigned Workload & Closures — {selected_cycle}"
+        )
+        fig_cert.update_layout(height=320, yaxis={'categoryorder':'total ascending'})
+        st.plotly_chart(fig_cert, use_container_width=True)
+
+        st.subheader("📋 Sortable Certifier Backlog & Run-Rate Table")
+        st.dataframe(prod_df, use_container_width=True, height=380, hide_index=True)
         csv_prod = prod_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label=f"📥 Download {selected_cycle}_certifier_performance.csv",
