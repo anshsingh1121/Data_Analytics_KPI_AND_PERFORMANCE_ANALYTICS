@@ -418,10 +418,22 @@ def cmd_pipeline(args):
             parsed_due = pd.to_datetime(tasks_resolved['due_date'], errors='coerce')
             tasks_resolved['due_date'] = parsed_due.fillna(pd.to_datetime(mapped_deadlines))
 
+        # Step 5b: Create Dedicated Timestamped Run Directory for Archived Raw & Processed Data
+        run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        run_dir = Path("data/runs") / f"run_{run_timestamp}"
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save both raw fetched and processed data into the dedicated run directory
+        raw_tasks.to_csv(run_dir / "raw_tasks_fetched.csv", index=False)
+        raw_disc.to_csv(run_dir / "raw_discrepancies_fetched.csv", index=False)
+        tasks_resolved.to_csv(run_dir / "cert_tasks_processed.csv", index=False)
+        disc_resolved.to_csv(run_dir / "discrepancies_processed.csv", index=False)
+
+        # Also maintain active data in data/processed for immediate consumption
         os.makedirs('data/processed', exist_ok=True)
         tasks_resolved.to_csv('data/processed/cert_tasks_processed.csv', index=False)
         disc_resolved.to_csv('data/processed/discrepancies_processed.csv', index=False)
-        logger.info("Saved processed data to data/processed/")
+        logger.info(f"Saved run data to dedicated directory: {run_dir} and updated data/processed/")
 
         # Active non-overlapping campaigns:
         # Q4 2026: Oct 5 - Oct 23, 2026
@@ -664,6 +676,28 @@ def cmd_pipeline(args):
 
         run_hist.end_run(run_id, "SUCCESS", tasks=len(tasks_resolved), disc=len(disc_resolved))
 
+        # Write Run Summary Metadata to the new run directory and to latest_run.json
+        run_summary = {
+            "run_id": run_id,
+            "run_dir": str(run_dir.as_posix()),
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "mode": mode,
+            "active_cycle": curr_cycle_name,
+            "raw_tasks_count": int(len(raw_tasks)),
+            "raw_discrepancies_count": int(len(raw_disc)),
+            "processed_tasks_count": int(len(tasks_resolved)),
+            "processed_discrepancies_count": int(len(disc_resolved)),
+            "excel_report": str(excel_path),
+            "csv_reports_count": len(csv_files),
+            "status": "SUCCESS"
+        }
+        with open(run_dir / "run_summary.json", "w", encoding="utf-8") as f:
+            json.dump(run_summary, f, indent=2)
+
+        os.makedirs("data/runs", exist_ok=True)
+        with open("data/runs/latest_run.json", "w", encoding="utf-8") as f:
+            json.dump(run_summary, f, indent=2)
+
         # Print Executive Summary
         print("\n" + "=" * 70)
         print(f"PIPELINE COMPLETED SUCCESSFULLY — {curr_cycle_name} KPI SUMMARY")
@@ -678,10 +712,12 @@ def cmd_pipeline(args):
         print(multi_q_df.to_string(index=False))
 
         print("\nKey Deliverables:")
-        print(f"  - Excel Report: {excel_path}")
-        print(f"  - CSV Reports:  reports/ ({len(csv_files)} files exported)")
-        print(f"  - Processed:    data/processed/cert_tasks_processed.csv ({len(tasks_resolved)} rows)")
-        print(f"  - Dashboard:    Run 'streamlit run src/dashboard/app.py' to explore interactive UI")
+        print(f"  - Dedicated Run Folder: {run_dir} (Archive of raw & processed datasets)")
+        print(f"  - Run Summary Metadata: {run_dir}/run_summary.json (Mirrored at data/runs/latest_run.json)")
+        print(f"  - Excel Report:        {excel_path}")
+        print(f"  - CSV Reports:         reports/ ({len(csv_files)} files exported)")
+        print(f"  - Processed Data:      data/processed/cert_tasks_processed.csv ({len(tasks_resolved)} rows)")
+        print(f"  - Interactive App:     Double-click 'Launch_Data_Certification_Analytics.bat' or run 'python app_launcher.py'")
         return 0
 
     except Exception as e:

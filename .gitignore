@@ -22,7 +22,7 @@ venv/
 env/
 ENV/
 
-# Local Data, Snapshots, & Generated Artifacts
+# Local Data, Snapshots, Runs & Generated Artifacts
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
@@ -31,6 +31,14 @@ data/snapshots/*
 !data/snapshots/.gitkeep
 data/synthetic/*
 !data/synthetic/.gitkeep
+data/runs/*
+!data/runs/.gitkeep
+
+# Build and Distribution Artifacts
+dist/
+build/
+dist_corporate/
+*.spec.bak
 
 # Generated Reports & Logs
 reports/*

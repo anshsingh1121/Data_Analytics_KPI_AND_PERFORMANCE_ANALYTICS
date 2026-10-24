@@ -1063,15 +1063,37 @@ elif page == "🔌 ServiceNow Integration Status":
             try:
                 from main import cmd_pipeline
                 import argparse
+                import json
                 res_code = cmd_pipeline(argparse.Namespace(mode=app_mode, skip_fetch=use_cached))
                 if res_code == 0 or res_code is None:
+                    latest_run_file = Path("data/runs/latest_run.json")
+                    run_info = {}
+                    if latest_run_file.exists():
+                        try:
+                            with open(latest_run_file, "r", encoding="utf-8") as rf:
+                                run_info = json.load(rf)
+                        except Exception:
+                            pass
+                    st.session_state['latest_pipeline_run'] = run_info
                     st.cache_data.clear()
-                    st.success("🎉 Pipeline executed successfully! KPI reports and master matrix refreshed.")
                     st.rerun()
                 else:
                     st.error("Pipeline encountered an error during execution. Check terminal logs.")
             except Exception as ex:
                 st.error(f"Pipeline execution failed: {ex}")
+
+    if st.session_state.get('latest_pipeline_run'):
+        run_data = st.session_state['latest_pipeline_run']
+        st.success(
+            f"🎉 **Pipeline Executed Successfully!**\n\n"
+            f"📁 **Dedicated Run Directory Created:** `{run_data.get('run_dir', 'data/runs')}`\n\n"
+            f"• **Raw Tasks Fetched:** `{run_data.get('raw_tasks_count', 0):,}` records\n\n"
+            f"• **Raw Discrepancies Fetched:** `{run_data.get('raw_discrepancies_count', 0):,}` records\n\n"
+            f"• **Processed & Validated Tasks:** `{run_data.get('processed_tasks_count', 0):,}` records\n\n"
+            f"• **Processed Discrepancies:** `{run_data.get('processed_discrepancies_count', 0):,}` records\n\n"
+            f"• **Consolidated Excel Report:** `{run_data.get('excel_report', 'reports/Data_Certification_KPI_Report.xlsx')}`\n\n"
+            f"• **Execution Timestamp:** `{run_data.get('timestamp', '')}`"
+        )
 
     st.markdown("---")
     st.subheader("📊 Active Dataset Statistics")
