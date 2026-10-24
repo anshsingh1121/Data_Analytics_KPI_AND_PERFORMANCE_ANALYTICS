@@ -160,10 +160,11 @@ with st.sidebar:
     page = st.radio(
         "Navigation",
         [
+            "📊 Executive Overview",
             "📈 Daily Trends & Quarter Velocity",
             "⚖️ 2026 & 2025 Quarter Deep Dive",
             "🗓️ Annual Master Matrix (All 4 Quarters)",
-            "🏢 Campaign Overview & Certifier Performance",
+            "👥 Certifier Performance Leaderboard",
             "🔌 ServiceNow Integration Status"
         ],
         index=0
@@ -347,9 +348,110 @@ kpis = kpi_engine.calculate_all_kpis(
 )
 
 # -----------------------------------------------------------------------------
-# PAGE 1: DAILY TRENDS & QUARTER VELOCITY COMPARISON
+# PAGE 1: EXECUTIVE OVERVIEW
 # -----------------------------------------------------------------------------
-if page == "📈 Daily Trends & Quarter Velocity":
+if page == "📊 Executive Overview":
+    st.markdown(f'<div class="main-header">📊 Executive Performance Overview — {selected_cycle}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Executive summary of operational performance, core certification KPIs, progress toward target, and SLA risk monitoring</div>', unsafe_allow_html=True)
+
+    k1 = kpis['kpi_1_certification_completion']
+    k2 = kpis['kpi_2_daily_closure_rate']
+    k3 = kpis['kpi_3_on_time_completion']
+    k4 = kpis['kpi_4_avg_completion_time']
+    k5 = kpis['kpi_5_discrepancy_rate']
+    k6 = kpis['kpi_6_data_accuracy']
+    k12 = kpis.get('kpi_12_sla_achievement', {})
+
+    # Top 6 KPI Metric Cards Row
+    m1, m2, m3, m4, m5, m6 = st.columns(6)
+    m1.metric("Completion %", f"{k1['value']}%", delta=f"{k1['numerator']}/{k1['denominator']}")
+    m2.metric("Daily Run Rate", f"{k2['value']} tasks/d", delta=f"{curr_meta['elapsed_working_days']} w-days")
+    m3.metric("On-Time Rate", f"{k3['value']}%", delta=f"{k3['numerator']} on-time")
+    m4.metric("Discrepancy Rate", f"{k5['value']}%", delta_color="inverse")
+    m5.metric("Avg Duration", f"{k4['value']} days" if k4.get('value') is not None else "N/A")
+    m6.metric("Final SLA %", f"{k12.get('value', 'N/A')}%")
+
+    st.markdown("---")
+
+    # Campaign Progress & Window Status
+    p_col1, p_col2 = st.columns([3, 2])
+    with p_col1:
+        st.markdown(f"**Campaign Completion Progress ({selected_cycle})**")
+        comp_pct = min(100.0, float(k1['value'] or 0.0)) / 100.0
+        st.progress(comp_pct)
+        st.caption(f"**Workload Certified:** {k1['numerator']:,} of {k1['denominator']:,} in-scope tasks ({k1['value']}%) | **Target:** ≥95.0%")
+
+    with p_col2:
+        st.markdown(f'''
+        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 14px;">
+            <span style="font-weight: 600; color: #1E293B; font-size: 12px;">📅 Active Campaign Window</span><br>
+            <span style="color: #475569; font-size: 12px;"><b>Start Date:</b> <code>{curr_meta.get('start_date')}</code> &nbsp;|&nbsp; <b>End Date:</b> <code>{curr_meta.get('end_date')}</code></span><br>
+            <span style="color: #475569; font-size: 12px;"><b>Final Deadline:</b> <code>{curr_meta.get('final_deadline')}</code></span>
+        </div>
+        ''', unsafe_allow_html=True)
+
+    st.markdown("---")
+
+    # Executive Scorecards: Volume, Backlog & Risks, Quality
+    sc1, sc2, sc3 = st.columns(3)
+
+    with sc1:
+        st.markdown(f'''
+        <div style="background-color: #F0FDF4; border: 1px solid #BBF7D0; border-radius: 8px; padding: 14px;">
+            <h4 style="margin: 0 0 8px 0; color: #166534; font-size: 15px;">📦 Total Campaign Workload</h4>
+            <p style="margin: 4px 0; font-size: 13px; color: #15803D;">• <b>Total Eligible Tasks:</b> {k1['denominator']:,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #15803D;">• <b>Closed Complete:</b> {k1['numerator']:,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #15803D;">• <b>Excluded / Cancelled:</b> {k1['excluded_count']:,}</p>
+        </div>
+        ''', unsafe_allow_html=True)
+
+    k8 = kpis.get('kpi_8_backlog_aging', {})
+    k8_val = k8.get('value', 0)
+    overdue_count = 0
+    state_col = 'state' if 'state' in c_tasks.columns else ('status' if 'status' in c_tasks.columns else None)
+    due_col = 'due_date' if 'due_date' in c_tasks.columns else None
+    if state_col and due_col:
+        open_m = c_tasks[state_col].isin(["Open", "Work in Progress", "Pending Review"])
+        as_of_dt = pd.to_datetime(curr_meta.get('end_date', '2026-10-23'))
+        if hasattr(as_of_dt, 'tzinfo') and as_of_dt.tzinfo is not None:
+            as_of_dt = as_of_dt.tz_localize(None)
+        due_dts = pd.to_datetime(c_tasks.loc[open_m, due_col], errors='coerce')
+        if hasattr(due_dts.dt, 'tz') and due_dts.dt.tz is not None:
+            due_dts = due_dts.dt.tz_localize(None)
+        overdue_count = int((due_dts < as_of_dt).sum())
+
+    with sc2:
+        st.markdown(f'''
+        <div style="background-color: #FEF2F2; border: 1px solid #FECACA; border-radius: 8px; padding: 14px;">
+            <h4 style="margin: 0 0 8px 0; color: #991B1B; font-size: 15px;">⏳ Backlog & SLA Risk</h4>
+            <p style="margin: 4px 0; font-size: 13px; color: #B91C1C;">• <b>Open Tasks Remaining:</b> {int(k8_val):,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #B91C1C;">• <b>Overdue SLA Tasks:</b> {overdue_count:,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #B91C1C;">• <b>Final SLA Target:</b> ≥95.0%</p>
+        </div>
+        ''', unsafe_allow_html=True)
+
+    total_disc = len(c_disc) if c_disc is not None else 0
+    resolved_disc = 0
+    if c_disc is not None and not c_disc.empty:
+        for st_cand in ['state', 'status', 'u_status']:
+            if st_cand in c_disc.columns:
+                resolved_disc = int(c_disc[st_cand].isin(['Resolved', 'Closed', 'resolved']).sum())
+                break
+
+    with sc3:
+        st.markdown(f'''
+        <div style="background-color: #EFF6FF; border: 1px solid #BFDBFE; border-radius: 8px; padding: 14px;">
+            <h4 style="margin: 0 0 8px 0; color: #1E40AF; font-size: 15px;">🛡️ Data Quality & Compliance</h4>
+            <p style="margin: 4px 0; font-size: 13px; color: #1D4ED8;">• <b>Total Discrepancies:</b> {total_disc:,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #1D4ED8;">• <b>Exceptions Resolved:</b> {resolved_disc:,}</p>
+            <p style="margin: 4px 0; font-size: 13px; color: #1D4ED8;">• <b>Clean Record Pass Rate:</b> {k6['value']}%</p>
+        </div>
+        ''', unsafe_allow_html=True)
+
+# -----------------------------------------------------------------------------
+# PAGE 2: DAILY TRENDS & QUARTER VELOCITY COMPARISON
+# -----------------------------------------------------------------------------
+elif page == "📈 Daily Trends & Quarter Velocity":
     st.markdown('<div class="main-header">Quarter-Wise Daily Trend & Velocity Comparison</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Working-day normalized daily closures, run-rates, and cumulative velocity curves across 2026 and 2025 quarters</div>', unsafe_allow_html=True)
 
@@ -691,41 +793,29 @@ elif page == "🗓️ Annual Master Matrix (All 4 Quarters)":
     )
 
 # -----------------------------------------------------------------------------
-# PAGE 4: CAMPAIGN OVERVIEW & CERTIFIER PERFORMANCE
+# PAGE 5: CERTIFIER PERFORMANCE LEADERBOARD
 # -----------------------------------------------------------------------------
-elif page == "🏢 Campaign Overview & Certifier Performance":
-    st.markdown(f'<div class="main-header">{selected_cycle} Active Campaign Overview</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-header">Single campaign performance, progress against target, and certifier workload leaderboard</div>', unsafe_allow_html=True)
+elif page == "👥 Certifier Performance Leaderboard":
+    st.markdown(f'<div class="main-header">👥 Certifier Workload & Performance Leaderboard — {selected_cycle}</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Individual certifier task allocation, completion throughput, daily run rates, and backlog ranking (slowest first)</div>', unsafe_allow_html=True)
 
-    k1 = kpis['kpi_1_certification_completion']
-    k2 = kpis['kpi_2_daily_closure_rate']
-    k3 = kpis['kpi_3_on_time_completion']
-    k5 = kpis['kpi_5_discrepancy_rate']
-    k6 = kpis['kpi_6_data_accuracy']
-
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("Completion %", f"{k1['value']}%", delta=f"{k1['numerator']}/{k1['denominator']}")
-    col2.metric("Daily Run Rate", f"{k2['value']} tasks/d", delta=f"{curr_meta['elapsed_working_days']} w-days")
-    col3.metric("On-Time Rate", f"{k3['value']}%")
-    col4.metric("Discrepancy Rate", f"{k5['value']}%", delta_color="inverse")
-    col5.metric("Data Pass Rate", f"{k6['value']}%")
-
-    st.markdown("---")
-    col_prog, col_stats = st.columns([2, 1])
-    with col_prog:
-        comp_pct = min(100.0, float(k1['value'] or 0.0)) / 100.0
-        st.markdown(f"**Campaign Progress: {k1['value']}%**")
-        st.progress(comp_pct)
-    with col_stats:
-        st.caption(f"**Window:** `{curr_meta.get('start_date')}` to `{curr_meta.get('end_date')}` | **Deadline:** `{curr_meta.get('final_deadline')}`")
-
-    # Certifier Productivity Leaderboard
-    st.subheader("👥 Certifier Workload & Performance Leaderboard")
     rep_gen = ReportGenerator(curr_meta, app_mode=app_mode)
     prod_df = rep_gen.build_certifier_productivity_df(c_tasks, curr_meta['elapsed_working_days'], sort_by="worst")
 
     if not prod_df.empty:
-        st.dataframe(prod_df, use_container_width=True, height=350, hide_index=True)
+        total_certifiers = len(prod_df)
+        total_assigned = int(prod_df['Total Assigned'].sum()) if 'Total Assigned' in prod_df.columns else len(c_tasks)
+        total_completed = int(prod_df['Completed'].sum()) if 'Completed' in prod_df.columns else 0
+        avg_rate = float(prod_df['Daily Run Rate'].mean()) if 'Daily Run Rate' in prod_df.columns else 0.0
+
+        c_c1, c_c2, c_c3, c_c4 = st.columns(4)
+        c_c1.metric("Active Certifiers", f"{total_certifiers:,}")
+        c_c2.metric("Total Assigned Workload", f"{total_assigned:,} tasks")
+        c_c3.metric("Total Tasks Completed", f"{total_completed:,} tasks")
+        c_c4.metric("Average Certifier Run Rate", f"{avg_rate:.1f} tasks/d")
+
+        st.markdown("---")
+        st.dataframe(prod_df, use_container_width=True, height=450, hide_index=True)
         csv_prod = prod_df.to_csv(index=False).encode('utf-8')
         st.download_button(
             label=f"📥 Download {selected_cycle}_certifier_performance.csv",
