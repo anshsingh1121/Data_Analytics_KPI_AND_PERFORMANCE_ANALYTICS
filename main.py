@@ -18,10 +18,6 @@ logger = logging.getLogger("DataCertPipeline")
 # Import system modules
 from src.config.loader import ConfigLoader
 from src.config.validation import ConfigValidator
-try:
-    from src.data_processing.synthetic_generator import generate_synthetic_data
-except ImportError:
-    generate_synthetic_data = None
 from src.data_processing.normalizer import DataNormalizer
 from src.data_processing.validator import DataValidator
 from src.data_processing.relationships import RelationshipResolver
@@ -233,12 +229,8 @@ def _verify_live_table(client, table_name, label, required_fields):
 def _audit_table_fields(file_path, label, required_fields):
     """Audits fields in demo/offline files."""
     if not os.path.exists(file_path):
-        try:
-            from src.data_processing.synthetic_generator import generate_synthetic_data
-            generate_synthetic_data()
-        except ImportError:
-            print(f"  [WARN] File '{file_path}' does not exist and synthetic generator is not installed.")
-            return
+        print(f"  [INFO] File '{file_path}' does not exist.")
+        return
     df = pd.read_csv(file_path)
     print(f"\n{label} ({len(df)} records, {len(df.columns)} columns):")
     for item in required_fields:
@@ -260,11 +252,14 @@ def cmd_discover_schema(args):
     api_cfg = loader.get_api_config()
 
     if not api_cfg.get('base_url'):
-        print("[DEMO MODE ACTIVE] Running local schema inspection on synthetic datasets...")
-        if not os.path.exists('data/synthetic/cert_tasks.csv'):
-            generate_synthetic_data()
-        df_tasks = pd.read_csv('data/synthetic/cert_tasks.csv')
-        df_disc = pd.read_csv('data/synthetic/discrepancies.csv')
+        print("[OFFLINE MODE] Inspecting local dataset schemas...")
+        source_task = 'data/processed/cert_tasks_processed.csv' if os.path.exists('data/processed/cert_tasks_processed.csv') else 'data/synthetic/cert_tasks.csv'
+        source_disc = 'data/processed/discrepancies_processed.csv' if os.path.exists('data/processed/discrepancies_processed.csv') else 'data/synthetic/discrepancies.csv'
+        if not os.path.exists(source_task):
+            print("  [INFO] No processed dataset found to inspect.")
+            return 0
+        df_tasks = pd.read_csv(source_task)
+        df_disc = pd.read_csv(source_disc) if os.path.exists(source_disc) else pd.DataFrame()
         print(f"\nDiscovered cert_task fields ({len(df_tasks.columns)} columns):")
         for col in df_tasks.columns:
             print(f"  - {col} (dtype: {df_tasks[col].dtype}, non-null: {df_tasks[col].notna().sum()}/{len(df_tasks)})")
@@ -284,12 +279,14 @@ def cmd_discover_schema(args):
     return 0
 
 def cmd_generate_demo(args):
-    """Generates synthetic test datasets for cert_task and discrepancies."""
+    """Generates synthetic test datasets for cert_task and discrepancies (Optional CLI utility)."""
     print("=" * 70)
     print("DATA CERTIFICATION KPI SYSTEM — GENERATING DEMO DATA")
     print("=" * 70)
-    if generate_synthetic_data is None:
-        print("[ERROR] Synthetic data generator is not available in this environment.")
+    try:
+        from src.data_processing.synthetic_generator import generate_synthetic_data
+    except ImportError:
+        print("[ERROR] Synthetic data generator is not installed.")
         return 1
     df_tasks, df_disc = generate_synthetic_data()
     print(f"\nSuccessfully generated {len(df_tasks)} tasks and {len(df_disc)} discrepancies.")
@@ -311,19 +308,15 @@ def cmd_pipeline(args):
     try:
         # Step 1: Data Extraction / Ingestion
         if mode == "demo":
-            tasks_path = 'data/synthetic/cert_tasks.csv'
-            disc_path = 'data/synthetic/discrepancies.csv'
-            if not os.path.exists(tasks_path) or not os.path.exists(disc_path):
-                if generate_synthetic_data is not None:
-                    logger.info("Demo data missing. Generating synthetic data...")
-                    generate_synthetic_data()
-                else:
-                    logger.error("Demo data files missing and synthetic generator is not installed.")
-                    run_hist.end_run(run_id, "FAILED", errors="Demo data missing and synthetic generator unavailable")
-                    return 1
+            tasks_path = 'data/processed/cert_tasks_processed.csv' if os.path.exists('data/processed/cert_tasks_processed.csv') else 'data/synthetic/cert_tasks.csv'
+            disc_path = 'data/processed/discrepancies_processed.csv' if os.path.exists('data/processed/discrepancies_processed.csv') else 'data/synthetic/discrepancies.csv'
+            if not os.path.exists(tasks_path):
+                logger.error("No input certification data found in data/processed/ or data/synthetic/.")
+                run_hist.end_run(run_id, "FAILED", errors="Missing input data")
+                return 1
 
             raw_tasks = pd.read_csv(tasks_path)
-            raw_disc = pd.read_csv(disc_path)
+            raw_disc = pd.read_csv(disc_path) if os.path.exists(disc_path) else pd.DataFrame()
             logger.info(f"Loaded demo tasks: {len(raw_tasks)}, discrepancies: {len(raw_disc)}")
         else:
             tasks_cache = 'data/processed/cert_tasks_processed.csv'
