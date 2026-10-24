@@ -908,9 +908,9 @@ elif page == "👥 Certifier Performance Leaderboard":
 
     if not prod_df.empty:
         total_certifiers = len(prod_df)
-        total_assigned = int(prod_df['Total Assigned'].sum()) if 'Total Assigned' in prod_df.columns else len(c_tasks)
-        total_completed = int(prod_df['Completed'].sum()) if 'Completed' in prod_df.columns else 0
-        avg_rate = float(prod_df['Daily Run Rate'].mean()) if 'Daily Run Rate' in prod_df.columns else 0.0
+        total_assigned = int(prod_df['Assigned Tasks'].sum()) if 'Assigned Tasks' in prod_df.columns else len(c_tasks)
+        total_completed = int(prod_df['Completed Tasks'].sum()) if 'Completed Tasks' in prod_df.columns else 0
+        avg_rate = float(prod_df['Daily Rate'].mean()) if 'Daily Rate' in prod_df.columns else 0.0
 
         c_c1, c_c2, c_c3, c_c4 = st.columns(4)
         c_c1.metric("Active Certifiers", f"{total_certifiers:,}")
@@ -922,13 +922,15 @@ elif page == "👥 Certifier Performance Leaderboard":
         
         # Visual: Top 10 Certifiers by Workload Throughput
         cert_col_name = 'Certifier' if 'Certifier' in prod_df.columns else ('assigned_to' if 'assigned_to' in prod_df.columns else prod_df.columns[0])
-        top_10 = prod_df.sort_values(by='Total Assigned', ascending=False).head(10).copy()
+        sort_col = 'Assigned Tasks' if 'Assigned Tasks' in prod_df.columns else prod_df.columns[1]
+        color_col = 'Completed Tasks' if 'Completed Tasks' in prod_df.columns else None
+        top_10 = prod_df.sort_values(by=sort_col, ascending=False).head(10).copy()
         fig_cert = px.bar(
             top_10,
-            x='Total Assigned',
+            x=sort_col,
             y=cert_col_name,
             orientation='h',
-            color='Completed',
+            color=color_col,
             color_continuous_scale="Blues",
             title=f"Top 10 Certifiers by Assigned Workload & Closures — {selected_cycle}"
         )
