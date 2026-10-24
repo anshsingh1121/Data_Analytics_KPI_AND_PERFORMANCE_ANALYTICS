@@ -171,7 +171,7 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("### 🔍 **Working Tab Filters**")
+    st.markdown("### 🎯 **Campaign View**")
 
     if tasks_df is not None and not tasks_df.empty:
         cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_df.columns else ('u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle')
@@ -207,77 +207,6 @@ with st.sidebar:
             if not date_filtered.empty:
                 c_tasks = date_filtered
         
-        # Determine best application / CI column with actual non-empty values
-        app_candidates = ['cmdb_ci', 'business_service', 'application', 'configuration_item', 'short_description']
-        app_col = None
-        for cand in app_candidates:
-            if cand in c_tasks.columns:
-                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
-                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
-                if not valid_vals.empty:
-                    app_col = cand
-                    break
-        if not app_col and 'cmdb_ci' in c_tasks.columns:
-            app_col = 'cmdb_ci'
-        elif not app_col and 'business_service' in c_tasks.columns:
-            app_col = 'business_service'
-
-        if app_col and app_col in c_tasks.columns:
-            raw_apps = c_tasks[app_col].dropna().astype(str).str.strip().unique()
-            apps = sorted([a for a in raw_apps if a and a not in ['nan', 'None', 'null']])
-        else:
-            apps = []
-
-        selected_apps = st.multiselect("Application / Business Service", apps, default=[])
-
-        # Determine best certifier column with actual non-empty values
-        cert_candidates = ['assigned_to', 'certifier', 'assigned_to_name', 'user']
-        cert_col = None
-        for cand in cert_candidates:
-            if cand in c_tasks.columns:
-                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
-                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
-                if not valid_vals.empty:
-                    cert_col = cand
-                    break
-        if not cert_col:
-            cert_col = 'assigned_to' if 'assigned_to' in c_tasks.columns else None
-
-        if cert_col and cert_col in c_tasks.columns:
-            raw_certs = c_tasks[cert_col].dropna().astype(str).str.strip().unique()
-            certifiers = sorted([c for c in raw_certs if c and c not in ['nan', 'None', 'null']])
-        else:
-            certifiers = []
-
-        selected_certifiers = st.multiselect("Assigned Certifier", certifiers, default=[])
-
-        # Determine best state column with actual non-empty values
-        state_candidates = ['state', 'status', 'task_state']
-        state_col = None
-        for cand in state_candidates:
-            if cand in c_tasks.columns:
-                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
-                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
-                if not valid_vals.empty:
-                    state_col = cand
-                    break
-        if not state_col:
-            state_col = 'state' if 'state' in c_tasks.columns else None
-
-        if state_col and state_col in c_tasks.columns:
-            raw_states = c_tasks[state_col].dropna().astype(str).str.strip().unique()
-            states = sorted([s for s in raw_states if s and s not in ['nan', 'None', 'null']])
-        else:
-            states = []
-
-        selected_states = st.multiselect("Task State / Status", states, default=[])
-
-        if selected_apps and app_col:
-            c_tasks = c_tasks[c_tasks[app_col].astype(str).str.strip().isin(selected_apps)]
-        if selected_certifiers and cert_col:
-            c_tasks = c_tasks[c_tasks[cert_col].astype(str).str.strip().isin(selected_certifiers)]
-        if selected_states and state_col:
-            c_tasks = c_tasks[c_tasks[state_col].astype(str).str.strip().isin(selected_states)]
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()
     else:
