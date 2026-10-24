@@ -506,12 +506,13 @@ if page == "📊 Executive Overview":
         fig_bench.update_layout(
             title="Core Operational KPIs vs SLA Target (95%)",
             xaxis_title="Percentage (%)",
-            xaxis_range=[0, 105],
+            xaxis_range=[0, 120],
             yaxis_title="",
             height=360,
+            margin=dict(l=10, r=45, t=40, b=30),
             coloraxis_showscale=False
         )
-        fig_bench.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+        fig_bench.update_traces(texttemplate='%{text:.1f}%', textposition='outside', cliponaxis=False)
         st.plotly_chart(fig_bench, use_container_width=True)
 
 # -----------------------------------------------------------------------------
@@ -725,7 +726,7 @@ elif page == "⚖️ 2026 & 2025 Quarter Deep Dive":
     c4.metric("Autumn Discrepancy %", f"{v5_a}%" if v5_a is not None else "N/A", delta=d5, delta_color="inverse")
 
     st.markdown("---")
-    col_t, col_c = st.columns([3, 2])
+    col_t, col_c = st.columns([1, 1])
 
     with col_t:
         st.subheader(f"📋 {comp_year}: Autumn (Q4) vs Spring (Q2) KPI Matrix")
@@ -781,12 +782,13 @@ elif page == "⚖️ 2026 & 2025 Quarter Deep Dive":
             )
             fig_bar.update_layout(
                 height=420,
-                xaxis_range=[0, 115],
+                xaxis_range=[0, 125],
                 yaxis_title="",
                 xaxis_title="Percentage (%)",
+                margin=dict(l=10, r=50, t=30, b=30),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
-            fig_bar.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
+            fig_bar.update_traces(texttemplate='%{text:.1f}%', textposition='outside', cliponaxis=False)
             st.plotly_chart(fig_bar, use_container_width=True)
 
 # -----------------------------------------------------------------------------
