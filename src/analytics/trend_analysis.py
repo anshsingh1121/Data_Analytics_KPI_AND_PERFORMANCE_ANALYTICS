@@ -99,10 +99,13 @@ class TrendAnalyzer:
             rows.append({
                 "day_index": idx,
                 "working_day": f"Day {idx}",
+                "Day_Label": f"Day {idx}",
                 "date": str(w_date),
                 "daily_closures": day_closures,
+                "Daily_Closures": day_closures,
                 "cumulative_closures": running_cum,
-                "cumulative_pct": cum_pct
+                "cumulative_pct": cum_pct,
+                "Cumulative_Pct": cum_pct
             })
 
         return pd.DataFrame(rows)
@@ -169,15 +172,19 @@ class TrendAnalyzer:
 
             rows.append({
                 "Working Day": f"Day {d_idx}",
+                "Day_Label": f"Day {d_idx}",
                 f"{q_name_a} Date": date_a,
+                f"Date ({q_name_a})": date_a,
                 f"{q_name_a} Daily": daily_a,
                 f"{q_name_a} Cumulative": cum_a_last,
                 f"{q_name_a} % Complete": pct_a_last,
                 f"{q_name_b} Date": date_b,
+                f"Date ({q_name_b})": date_b,
                 f"{q_name_b} Daily": daily_b,
                 f"{q_name_b} Cumulative": cum_b_last,
                 f"{q_name_b} % Complete": pct_b_last,
                 f"Daily Delta ({q_name_a} - {q_name_b})": delta_daily,
+                f"Daily Difference (A - B)": delta_daily,
                 f"Cumulative Delta ({q_name_a} - {q_name_b})": delta_cum,
                 f"% Delta ({q_name_a} - {q_name_b})": delta_pct,
                 "Pace Leader": pace_leader

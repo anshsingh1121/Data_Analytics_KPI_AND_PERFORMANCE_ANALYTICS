@@ -207,24 +207,77 @@ with st.sidebar:
             if not date_filtered.empty:
                 c_tasks = date_filtered
         
-        app_col = 'business_service' if 'business_service' in c_tasks.columns else ('cmdb_ci' if 'cmdb_ci' in c_tasks.columns else ('application' if 'application' in c_tasks.columns else None))
-        apps = sorted(list(c_tasks[app_col].dropna().unique())) if app_col in c_tasks.columns else []
+        # Determine best application / CI column with actual non-empty values
+        app_candidates = ['cmdb_ci', 'business_service', 'application', 'configuration_item', 'short_description']
+        app_col = None
+        for cand in app_candidates:
+            if cand in c_tasks.columns:
+                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
+                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
+                if not valid_vals.empty:
+                    app_col = cand
+                    break
+        if not app_col and 'cmdb_ci' in c_tasks.columns:
+            app_col = 'cmdb_ci'
+        elif not app_col and 'business_service' in c_tasks.columns:
+            app_col = 'business_service'
+
+        if app_col and app_col in c_tasks.columns:
+            raw_apps = c_tasks[app_col].dropna().astype(str).str.strip().unique()
+            apps = sorted([a for a in raw_apps if a and a not in ['nan', 'None', 'null']])
+        else:
+            apps = []
+
         selected_apps = st.multiselect("Application / Business Service", apps, default=[])
 
-        cert_col = 'assigned_to' if 'assigned_to' in c_tasks.columns else 'certifier'
-        certifiers = sorted(list(c_tasks[cert_col].dropna().unique())) if cert_col in c_tasks.columns else []
+        # Determine best certifier column with actual non-empty values
+        cert_candidates = ['assigned_to', 'certifier', 'assigned_to_name', 'user']
+        cert_col = None
+        for cand in cert_candidates:
+            if cand in c_tasks.columns:
+                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
+                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
+                if not valid_vals.empty:
+                    cert_col = cand
+                    break
+        if not cert_col:
+            cert_col = 'assigned_to' if 'assigned_to' in c_tasks.columns else None
+
+        if cert_col and cert_col in c_tasks.columns:
+            raw_certs = c_tasks[cert_col].dropna().astype(str).str.strip().unique()
+            certifiers = sorted([c for c in raw_certs if c and c not in ['nan', 'None', 'null']])
+        else:
+            certifiers = []
+
         selected_certifiers = st.multiselect("Assigned Certifier", certifiers, default=[])
 
-        state_col = 'state' if 'state' in c_tasks.columns else 'status'
-        states = sorted(list(c_tasks[state_col].dropna().unique())) if state_col in c_tasks.columns else []
+        # Determine best state column with actual non-empty values
+        state_candidates = ['state', 'status', 'task_state']
+        state_col = None
+        for cand in state_candidates:
+            if cand in c_tasks.columns:
+                valid_vals = c_tasks[cand].dropna().astype(str).str.strip()
+                valid_vals = valid_vals[~valid_vals.isin(['', 'nan', 'None', 'null'])]
+                if not valid_vals.empty:
+                    state_col = cand
+                    break
+        if not state_col:
+            state_col = 'state' if 'state' in c_tasks.columns else None
+
+        if state_col and state_col in c_tasks.columns:
+            raw_states = c_tasks[state_col].dropna().astype(str).str.strip().unique()
+            states = sorted([s for s in raw_states if s and s not in ['nan', 'None', 'null']])
+        else:
+            states = []
+
         selected_states = st.multiselect("Task State / Status", states, default=[])
 
-        if selected_apps:
-            c_tasks = c_tasks[c_tasks[app_col].isin(selected_apps)]
-        if selected_certifiers:
-            c_tasks = c_tasks[c_tasks[cert_col].isin(selected_certifiers)]
-        if selected_states:
-            c_tasks = c_tasks[c_tasks[state_col].isin(selected_states)]
+        if selected_apps and app_col:
+            c_tasks = c_tasks[c_tasks[app_col].astype(str).str.strip().isin(selected_apps)]
+        if selected_certifiers and cert_col:
+            c_tasks = c_tasks[c_tasks[cert_col].astype(str).str.strip().isin(selected_certifiers)]
+        if selected_states and state_col:
+            c_tasks = c_tasks[c_tasks[state_col].astype(str).str.strip().isin(selected_states)]
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()
     else:
@@ -459,17 +512,20 @@ if page == "📊 Executive Overview":
             c_tasks, curr_meta.get('start_date'), curr_meta.get('end_date'), holidays=cycle_mgr.holidays
         )
         if not daily_series.empty:
+            day_x = daily_series['working_day'] if 'working_day' in daily_series.columns else ('Day_Label' if 'Day_Label' in daily_series.columns else daily_series.columns[0])
+            daily_y = daily_series['daily_closures'] if 'daily_closures' in daily_series.columns else ('Daily_Closures' if 'Daily_Closures' in daily_series.columns else daily_series.columns[1])
+            cum_y = daily_series['cumulative_pct'] if 'cumulative_pct' in daily_series.columns else ('Cumulative_Pct' if 'Cumulative_Pct' in daily_series.columns else daily_series.columns[-1])
             fig_exec_trend = go.Figure()
             fig_exec_trend.add_trace(go.Bar(
-                x=daily_series['Day_Label'],
-                y=daily_series['Daily_Closures'],
+                x=day_x,
+                y=daily_y,
                 name="Daily Closures",
                 marker_color="#2563EB",
                 opacity=0.85
             ))
             fig_exec_trend.add_trace(go.Scatter(
-                x=daily_series['Day_Label'],
-                y=daily_series['Cumulative_Pct'],
+                x=day_x,
+                y=cum_y,
                 name="Cumulative %",
                 yaxis="y2",
                 mode="lines+markers",
@@ -636,16 +692,18 @@ elif page == "📈 Daily Trends & Quarter Velocity":
         st.markdown("---")
         ch_col1, ch_col2 = st.columns(2)
 
+        day_x = comp_daily_df['Working Day'] if 'Working Day' in comp_daily_df.columns else ('Day_Label' if 'Day_Label' in comp_daily_df.columns else comp_daily_df.columns[0])
+
         with ch_col1:
             fig_daily = go.Figure()
             fig_daily.add_trace(go.Bar(
-                x=comp_daily_df['Day_Label'],
+                x=day_x,
                 y=comp_daily_df[col_qa_daily],
                 name=f"{qa_name} Closures",
                 marker_color="#1E40AF"
             ))
             fig_daily.add_trace(go.Bar(
-                x=comp_daily_df['Day_Label'],
+                x=day_x,
                 y=comp_daily_df[col_qb_daily],
                 name=f"{qb_name} Closures",
                 marker_color="#F59E0B"
@@ -666,14 +724,14 @@ elif page == "📈 Daily Trends & Quarter Velocity":
             col_qb_pct = f"{qb_name} % Complete"
 
             fig_cum.add_trace(go.Scatter(
-                x=comp_daily_df['Day_Label'],
+                x=day_x,
                 y=comp_daily_df[col_qa_pct],
                 mode='lines+markers',
                 name=f"{qa_name} % Complete",
                 line=dict(color="#1E40AF", width=3)
             ))
             fig_cum.add_trace(go.Scatter(
-                x=comp_daily_df['Day_Label'],
+                x=day_x,
                 y=comp_daily_df[col_qb_pct],
                 mode='lines+markers',
                 name=f"{qb_name} % Complete",
@@ -694,9 +752,16 @@ elif page == "📈 Daily Trends & Quarter Velocity":
             st.plotly_chart(fig_cum, use_container_width=True)
 
         st.subheader("📋 Day-by-Day Normalized Comparative Data")
-        display_cols = ['Day_Label', f"Date ({qa_name})", col_qa_daily, col_qa_cum, col_qa_pct,
-                        f"Date ({qb_name})", col_qb_daily, col_qb_cum, col_qb_pct, 'Daily Difference (A - B)']
+        display_cols = [
+            'Working Day',
+            f"{qa_name} Date", col_qa_daily, col_qa_cum, col_qa_pct,
+            f"{qb_name} Date", col_qb_daily, col_qb_cum, col_qb_pct,
+            f"Daily Delta ({qa_name} - {qb_name})",
+            "Pace Leader"
+        ]
         available_display_cols = [c for c in display_cols if c in comp_daily_df.columns]
+        if not available_display_cols:
+            available_display_cols = list(comp_daily_df.columns)
         st.dataframe(comp_daily_df[available_display_cols], use_container_width=True, hide_index=True)
 
         csv_comp = comp_daily_df.to_csv(index=False).encode('utf-8')
@@ -759,6 +824,10 @@ elif page == "⚖️ 2026 & 2025 Quarter Deep Dive":
         comp_rows = cycle_mgr.compare_metrics(kpis_autumn, kpis_spring, mode="intra_year")
         rep_gen = ReportGenerator(meta_autumn, app_mode=app_mode)
         comp_df = rep_gen.build_cycle_comparison_df(comp_rows)
+        # Clean null/None values so table displays clean '-' instead of 'None' or 'None %'
+        comp_df = comp_df.fillna("-")
+        for col_name in comp_df.columns:
+            comp_df[col_name] = comp_df[col_name].replace({'None': '-', 'None %': '-', 'nan': '-', 'NaN': '-'})
         comp_df = comp_df.rename(columns={
             "Current Value": f"Autumn Q4-{comp_year}",
             "Previous Value": f"Spring Q2-{comp_year}",
@@ -779,16 +848,37 @@ elif page == "⚖️ 2026 & 2025 Quarter Deep Dive":
         comp_chart_data = []
         for row in comp_rows:
             if row['unit'] == '%' and row['current_value'] is not None and row['previous_value'] is not None:
-                comp_chart_data.append({'KPI': row['metric_name'], 'Campaign': f"Spring Q2-{comp_year}", 'Value (%)': row['previous_value']})
-                comp_chart_data.append({'KPI': row['metric_name'], 'Campaign': f"Autumn Q4-{comp_year}", 'Value (%)': row['current_value']})
+                # Clean shortened label for visual aesthetics (zero text overlap)
+                k_name = row['metric_name']
+                short_label = (
+                    k_name.replace(" (<=1d)", "")
+                          .replace("Certification ", "")
+                          .replace(" / Pass Rate", "")
+                          .replace("Final ", "")
+                )
+                comp_chart_data.append({'KPI': short_label, 'Campaign': f"Spring Q2-{comp_year}", 'Value (%)': row['previous_value']})
+                comp_chart_data.append({'KPI': short_label, 'Campaign': f"Autumn Q4-{comp_year}", 'Value (%)': row['current_value']})
         
         if comp_chart_data:
             df_plot = pd.DataFrame(comp_chart_data)
             fig_bar = px.bar(
-                df_plot, x='KPI', y='Value (%)', color='Campaign', barmode='group',
+                df_plot,
+                y='KPI',
+                x='Value (%)',
+                color='Campaign',
+                barmode='group',
+                orientation='h',
+                text='Value (%)',
                 color_discrete_map={f"Spring Q2-{comp_year}": "#3B82F6", f"Autumn Q4-{comp_year}": "#10B981"}
             )
-            fig_bar.update_layout(height=400, yaxis_range=[0, 105], xaxis_tickangle=-30)
+            fig_bar.update_layout(
+                height=420,
+                xaxis_range=[0, 115],
+                yaxis_title="",
+                xaxis_title="Percentage (%)",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            )
+            fig_bar.update_traces(texttemplate='%{text:.1f}%', textposition='outside')
             st.plotly_chart(fig_bar, use_container_width=True)
 
 # -----------------------------------------------------------------------------
