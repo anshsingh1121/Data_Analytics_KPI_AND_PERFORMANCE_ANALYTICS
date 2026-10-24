@@ -441,11 +441,13 @@ if page == "📊 Executive Overview":
             c_tasks, curr_meta.get('start_date'), curr_meta.get('end_date'), holidays=cycle_mgr.holidays
         )
         if not daily_series.empty:
-            day_x = daily_series['Date_Label'] if 'Date_Label' in daily_series.columns else (
-                daily_series['date_label'] if 'date_label' in daily_series.columns else (
-                    daily_series['working_day'] if 'working_day' in daily_series.columns else daily_series.columns[0]
+            if 'date' in daily_series.columns:
+                daily_series['Date_Label'] = pd.to_datetime(daily_series['date'], errors='coerce').apply(
+                    lambda d: f"{d.strftime('%b')} {d.day}" if pd.notna(d) else "-"
                 )
-            )
+            elif 'Date_Label' not in daily_series.columns:
+                daily_series['Date_Label'] = daily_series['working_day']
+            day_x = daily_series['Date_Label']
             daily_y = daily_series['daily_closures'] if 'daily_closures' in daily_series.columns else ('Daily_Closures' if 'Daily_Closures' in daily_series.columns else daily_series.columns[1])
             cum_y = daily_series['cumulative_pct'] if 'cumulative_pct' in daily_series.columns else ('Cumulative_Pct' if 'Cumulative_Pct' in daily_series.columns else daily_series.columns[-1])
             fig_exec_trend = go.Figure()
@@ -502,7 +504,7 @@ if page == "📊 Executive Overview":
             color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
             range_color=[70, 100]
         )
-        fig_bench.add_vline(x=95.0, line_dash="dash", line_color="#DC2626", annotation_text="Target: 95%", annotation_position="top right")
+        fig_bench.add_vline(x=95.0, line_dash="dash", line_color="#DC2626", annotation_text="Target: 95%", annotation_position="bottom right")
         fig_bench.update_layout(
             title="Core Operational KPIs vs SLA Target (95%)",
             xaxis_title="Percentage (%)",
@@ -595,11 +597,38 @@ elif page == "📈 Daily Trends & Quarter Velocity":
         st.markdown("---")
         ch_col1, ch_col2 = st.columns(2)
 
-        day_x = comp_daily_df['Date_Label'] if 'Date_Label' in comp_daily_df.columns else (
-            comp_daily_df['date_label'] if 'date_label' in comp_daily_df.columns else (
-                comp_daily_df['Working Day'] if 'Working Day' in comp_daily_df.columns else comp_daily_df.columns[0]
-            )
-        )
+        # Format explicit calendar dates and mapped day labels directly in app.py
+        date_a_src = f"{qa_name} Date" if f"{qa_name} Date" in comp_daily_df.columns else f"Date ({qa_name})"
+        date_b_src = f"{qb_name} Date" if f"{qb_name} Date" in comp_daily_df.columns else f"Date ({qb_name})"
+
+        def _clean_date_str(val):
+            if pd.isna(val) or str(val).strip() in ["", "-", "None", "nan", "NaN"]:
+                return "-"
+            try:
+                dt = pd.to_datetime(val)
+                return f"{dt.strftime('%b')} {dt.day}"
+            except Exception:
+                return str(val)
+
+        dates_a = comp_daily_df[date_a_src].apply(_clean_date_str) if date_a_src in comp_daily_df.columns else pd.Series(["-"] * len(comp_daily_df))
+        dates_b = comp_daily_df[date_b_src].apply(_clean_date_str) if date_b_src in comp_daily_df.columns else pd.Series(["-"] * len(comp_daily_df))
+
+        comp_daily_df[f"Date ({qa_name})"] = dates_a
+        comp_daily_df[f"Date ({qb_name})"] = dates_b
+
+        w_days = comp_daily_df['Working Day'] if 'Working Day' in comp_daily_df.columns else [f"Day {i+1}" for i in range(len(comp_daily_df))]
+        comp_daily_df[f"Day & Date ({qa_name})"] = [
+            f"{w} ({d})" if d != "-" else w for w, d in zip(w_days, dates_a)
+        ]
+        comp_daily_df[f"Day & Date ({qb_name})"] = [
+            f"{w} ({d})" if d != "-" else w for w, d in zip(w_days, dates_b)
+        ]
+
+        # Use clean calendar date (Oct 5, Oct 6...) for graph X-axis
+        comp_daily_df['Date_Label'] = [
+            a if a != "-" else b for a, b in zip(dates_a, dates_b)
+        ]
+        day_x = comp_daily_df['Date_Label']
 
         with ch_col1:
             fig_daily = go.Figure()
@@ -662,11 +691,10 @@ elif page == "📈 Daily Trends & Quarter Velocity":
 
         st.subheader("📋 Day-by-Day Normalized Comparative Data")
         display_cols = [
-            f"Date ({qa_name})", col_qa_daily, col_qa_cum, col_qa_pct,
-            f"Date ({qb_name})", col_qb_daily, col_qb_cum, col_qb_pct,
+            f"Day & Date ({qa_name})", col_qa_daily, col_qa_cum, col_qa_pct,
+            f"Day & Date ({qb_name})", col_qb_daily, col_qb_cum, col_qb_pct,
             f"Daily Delta ({qa_name} - {qb_name})",
-            "Pace Leader",
-            "Working Day"
+            "Pace Leader"
         ]
         available_display_cols = [c for c in display_cols if c in comp_daily_df.columns]
         if not available_display_cols:
