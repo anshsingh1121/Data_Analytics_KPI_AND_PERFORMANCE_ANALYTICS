@@ -441,7 +441,11 @@ if page == "📊 Executive Overview":
             c_tasks, curr_meta.get('start_date'), curr_meta.get('end_date'), holidays=cycle_mgr.holidays
         )
         if not daily_series.empty:
-            day_x = daily_series['working_day'] if 'working_day' in daily_series.columns else ('Day_Label' if 'Day_Label' in daily_series.columns else daily_series.columns[0])
+            day_x = daily_series['Date_Label'] if 'Date_Label' in daily_series.columns else (
+                daily_series['date_label'] if 'date_label' in daily_series.columns else (
+                    daily_series['working_day'] if 'working_day' in daily_series.columns else daily_series.columns[0]
+                )
+            )
             daily_y = daily_series['daily_closures'] if 'daily_closures' in daily_series.columns else ('Daily_Closures' if 'Daily_Closures' in daily_series.columns else daily_series.columns[1])
             cum_y = daily_series['cumulative_pct'] if 'cumulative_pct' in daily_series.columns else ('Cumulative_Pct' if 'Cumulative_Pct' in daily_series.columns else daily_series.columns[-1])
             fig_exec_trend = go.Figure()
@@ -462,7 +466,8 @@ if page == "📊 Executive Overview":
             ))
             fig_exec_trend.update_layout(
                 title=f"{selected_cycle} Daily Closures & Completion Velocity",
-                xaxis_title="Working Day Elapsed",
+                xaxis_title="Campaign Date",
+                xaxis=dict(type='category'),
                 yaxis_title="Tasks Completed",
                 yaxis2=dict(
                     title="Cumulative % Complete",
@@ -516,69 +521,37 @@ elif page == "📈 Daily Trends & Quarter Velocity":
     st.markdown('<div class="main-header">Quarter-Wise Daily Trend & Velocity Comparison</div>', unsafe_allow_html=True)
     st.markdown('<div class="sub-header">Working-day normalized daily closures, run-rates, and cumulative velocity curves across 2026 and 2025 quarters</div>', unsafe_allow_html=True)
 
-    col_p1, col_p2 = st.columns([1, 2])
-    with col_p1:
-        comp_preset = st.selectbox(
-            "Quarter Comparison Scope:",
-            [
-                "2026: Q2 vs Q4 (Spring vs Autumn)",
-                "2025: Q2 vs Q4 (Spring vs Autumn)",
-                "Q4-2026 vs Q4-2025 (Autumn YoY)",
-                "Q2-2026 vs Q2-2025 (Spring YoY)",
-                "Custom Quarter Pair (Manual Dates)"
-            ],
-            index=0,
-            key="daily_comp_preset"
+    col_sel1, col_sel2 = st.columns(2)
+    with col_sel1:
+        qa_name = st.selectbox(
+            "Primary Campaign Cycle:",
+            available_cycles,
+            index=available_cycles.index(selected_cycle) if selected_cycle in available_cycles else 0,
+            help="Select the active campaign to evaluate daily closure velocity."
         )
-    with col_p2:
-        st.markdown("""
-        <div style="background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; padding: 10px 14px; margin-top: 6px;">
-            <span style="font-weight: 600; color: #1E293B; font-size: 13px;">⚡ Working Day Alignment Rule:</span><br>
-            <span style="color: #475569; font-size: 12px;">Since campaigns start on different calendar days, velocity is normalized along <b>Working Day 1 to Day N</b> for an accurate like-for-like comparison.</span>
-        </div>
-        """, unsafe_allow_html=True)
+    with col_sel2:
+        default_pairs = {
+            'Q4-2026': ['Q2-2026 (Spring 2026)', 'Q4-2025 (Autumn YoY)', 'Q2-2025 (Spring 2025)'],
+            'Q2-2026': ['Q2-2025 (Spring YoY)', 'Q4-2025 (Autumn 2025)', 'Q4-2026 (Autumn 2026)'],
+            'Q4-2025': ['Q2-2025 (Spring 2025)', 'Q4-2026 (Autumn 2026)', 'Q2-2026 (Spring 2026)'],
+            'Q2-2025': ['Q4-2025 (Autumn 2025)', 'Q2-2026 (Spring 2026)', 'Q4-2026 (Autumn 2026)']
+        }
+        partner_candidates = default_pairs.get(qa_name, [c for c in available_cycles if c != qa_name])
+        selected_partner = st.selectbox(
+            "Comparison Campaign Cycle:",
+            partner_candidates,
+            index=0,
+            help="Select the baseline campaign to compare daily run-rate and pacing."
+        )
+        qb_name = selected_partner.split(" ")[0]
 
-    # Preset date configurations
-    if comp_preset == "2026: Q2 vs Q4 (Spring vs Autumn)":
-        def_qa_name, def_qb_name = "Q4-2026", "Q2-2026"
-        def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
-        def_qb_start, def_qb_end = date(2026, 5, 5), date(2026, 5, 22)
-    elif comp_preset == "2025: Q2 vs Q4 (Spring vs Autumn)":
-        def_qa_name, def_qb_name = "Q4-2025", "Q2-2025"
-        def_qa_start, def_qa_end = date(2025, 10, 6), date(2025, 10, 23)
-        def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
-    elif comp_preset == "Q4-2026 vs Q4-2025 (Autumn YoY)":
-        def_qa_name, def_qb_name = "Q4-2026", "Q4-2025"
-        def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
-        def_qb_start, def_qb_end = date(2025, 10, 6), date(2025, 10, 23)
-    elif comp_preset == "Q2-2026 vs Q2-2025 (Spring YoY)":
-        def_qa_name, def_qb_name = "Q2-2026", "Q2-2025"
-        def_qa_start, def_qa_end = date(2026, 5, 5), date(2026, 5, 22)
-        def_qb_start, def_qb_end = date(2025, 4, 7), date(2025, 4, 25)
-    else:
-        def_qa_name, def_qb_name = "Q4-2026", "Q4-2025"
-        def_qa_start, def_qa_end = date(2026, 10, 5), date(2026, 10, 23)
-        def_qb_start, def_qb_end = date(2025, 10, 6), date(2025, 10, 23)
-
-    with st.expander("🛠️ **Adjust Quarter Comparison Dates & Custom Windows**", expanded=(comp_preset == "Custom Quarter Pair (Manual Dates)")):
-        col_c_left, col_c_right = st.columns(2)
-        with col_c_left:
-            st.markdown("##### **Quarter A (Primary / Baseline)**")
-            qa_yr = st.selectbox("Year A", [2026, 2025], index=0 if "2026" in def_qa_name else 1, key="daily_qa_yr")
-            qa_q = st.selectbox("Quarter A", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_qa_name.split("-")[0] if def_qa_name.split("-")[0] in ["Q2", "Q4"] else "Q4"), key="daily_qa_q")
-            qa_name = f"{qa_q}-{qa_yr}"
-            d_qa1, d_qa2 = st.columns(2)
-            qa_start = d_qa1.date_input("Start Date A", value=def_qa_start, key="daily_qa_s")
-            qa_end = d_qa2.date_input("End Date A", value=def_qa_end, key="daily_qa_e")
-
-        with col_c_right:
-            st.markdown("##### **Quarter B (Comparison / Prior)**")
-            qb_yr = st.selectbox("Year B", [2026, 2025], index=1 if "2025" in def_qb_name else 0, key="daily_qb_yr")
-            qb_q = st.selectbox("Quarter B", ["Q2", "Q4"], index=["Q2", "Q4"].index(def_qb_name.split("-")[0] if def_qb_name.split("-")[0] in ["Q2", "Q4"] else "Q4"), key="daily_qb_q")
-            qb_name = f"{qb_q}-{qb_yr}"
-            d_qb1, d_qb2 = st.columns(2)
-            qb_start = d_qb1.date_input("Start Date B", value=def_qb_start, key="daily_qb_s")
-            qb_end = d_qb2.date_input("End Date B", value=def_qb_end, key="daily_qb_e")
+    # Resolve exact verified campaign dates directly from cycle configuration
+    meta_a = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(qa_name))
+    meta_b = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(qb_name))
+    qa_start = meta_a.get('start_date')
+    qa_end = meta_a.get('end_date')
+    qb_start = meta_b.get('start_date')
+    qb_end = meta_b.get('end_date')
 
     kpis_a, tasks_a, disc_a, meta_a = get_quarter_kpis(tasks_df, disc_df, qa_name, start_date=qa_start, end_date=qa_end)
     kpis_b, tasks_b, disc_b, meta_b = get_quarter_kpis(tasks_df, disc_df, qb_name, start_date=qb_start, end_date=qb_end)
@@ -621,7 +594,11 @@ elif page == "📈 Daily Trends & Quarter Velocity":
         st.markdown("---")
         ch_col1, ch_col2 = st.columns(2)
 
-        day_x = comp_daily_df['Working Day'] if 'Working Day' in comp_daily_df.columns else ('Day_Label' if 'Day_Label' in comp_daily_df.columns else comp_daily_df.columns[0])
+        day_x = comp_daily_df['Date_Label'] if 'Date_Label' in comp_daily_df.columns else (
+            comp_daily_df['date_label'] if 'date_label' in comp_daily_df.columns else (
+                comp_daily_df['Working Day'] if 'Working Day' in comp_daily_df.columns else comp_daily_df.columns[0]
+            )
+        )
 
         with ch_col1:
             fig_daily = go.Figure()
@@ -638,9 +615,10 @@ elif page == "📈 Daily Trends & Quarter Velocity":
                 marker_color="#F59E0B"
             ))
             fig_daily.update_layout(
-                title=f"Daily Closures by Working Day: {qa_name} vs {qb_name}",
+                title=f"Daily Closures: {qa_name} vs {qb_name}",
                 barmode='group',
-                xaxis_title="Working Day Elapsed",
+                xaxis_title="Campaign Date",
+                xaxis=dict(type='category'),
                 yaxis_title="Tasks Completed",
                 height=380,
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
@@ -672,7 +650,8 @@ elif page == "📈 Daily Trends & Quarter Velocity":
             )
             fig_cum.update_layout(
                 title=f"Cumulative Completion Velocity: {qa_name} vs {qb_name}",
-                xaxis_title="Working Day Elapsed",
+                xaxis_title="Campaign Date",
+                xaxis=dict(type='category'),
                 yaxis_title="% of Campaign Completed",
                 yaxis_range=[0, 105],
                 height=380,
@@ -682,11 +661,11 @@ elif page == "📈 Daily Trends & Quarter Velocity":
 
         st.subheader("📋 Day-by-Day Normalized Comparative Data")
         display_cols = [
-            'Working Day',
-            f"{qa_name} Date", col_qa_daily, col_qa_cum, col_qa_pct,
-            f"{qb_name} Date", col_qb_daily, col_qb_cum, col_qb_pct,
+            f"Date ({qa_name})", col_qa_daily, col_qa_cum, col_qa_pct,
+            f"Date ({qb_name})", col_qb_daily, col_qb_cum, col_qb_pct,
             f"Daily Delta ({qa_name} - {qb_name})",
-            "Pace Leader"
+            "Pace Leader",
+            "Working Day"
         ]
         available_display_cols = [c for c in display_cols if c in comp_daily_df.columns]
         if not available_display_cols:

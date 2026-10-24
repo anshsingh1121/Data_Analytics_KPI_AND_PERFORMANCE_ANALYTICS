@@ -96,11 +96,15 @@ class TrendAnalyzer:
             day_closures = daily_counts.get(w_date, 0)
             running_cum += day_closures
             cum_pct = round((running_cum / total_eligible * 100.0), 2) if total_eligible > 0 else 0.0
+            date_label = f"{w_date.strftime('%b')} {w_date.day}"
             rows.append({
                 "day_index": idx,
                 "working_day": f"Day {idx}",
                 "Day_Label": f"Day {idx}",
                 "date": str(w_date),
+                "date_label": date_label,
+                "Date_Label": date_label,
+                "Date": date_label,
                 "daily_closures": day_closures,
                 "Daily_Closures": day_closures,
                 "cumulative_closures": running_cum,
@@ -153,12 +157,28 @@ class TrendAnalyzer:
             row_b = df_b[df_b['day_index'] == d_idx]
 
             date_a = row_a.iloc[0]['date'] if not row_a.empty else "-"
+            if not row_a.empty and 'date_label' in row_a.columns:
+                date_label_a = str(row_a.iloc[0]['date_label'])
+            elif date_a != "-":
+                dt_a = pd.to_datetime(date_a, errors='coerce')
+                date_label_a = f"{dt_a.strftime('%b')} {dt_a.day}" if pd.notna(dt_a) else "-"
+            else:
+                date_label_a = "-"
+
+            date_b = row_b.iloc[0]['date'] if not row_b.empty else "-"
+            if not row_b.empty and 'date_label' in row_b.columns:
+                date_label_b = str(row_b.iloc[0]['date_label'])
+            elif date_b != "-":
+                dt_b = pd.to_datetime(date_b, errors='coerce')
+                date_label_b = f"{dt_b.strftime('%b')} {dt_b.day}" if pd.notna(dt_b) else "-"
+            else:
+                date_label_b = "-"
+
             daily_a = int(row_a.iloc[0]['daily_closures']) if not row_a.empty else 0
             if not row_a.empty:
                 cum_a_last = int(row_a.iloc[0]['cumulative_closures'])
                 pct_a_last = float(row_a.iloc[0]['cumulative_pct'])
 
-            date_b = row_b.iloc[0]['date'] if not row_b.empty else "-"
             daily_b = int(row_b.iloc[0]['daily_closures']) if not row_b.empty else 0
             if not row_b.empty:
                 cum_b_last = int(row_b.iloc[0]['cumulative_closures'])
@@ -170,16 +190,21 @@ class TrendAnalyzer:
 
             pace_leader = q_name_a if pct_a_last > pct_b_last else (q_name_b if pct_b_last > pct_a_last else "Tied")
 
+            chart_date_label = date_label_a if date_label_a != "-" else date_label_b
+
             rows.append({
                 "Working Day": f"Day {d_idx}",
                 "Day_Label": f"Day {d_idx}",
-                f"{q_name_a} Date": date_a,
-                f"Date ({q_name_a})": date_a,
+                "Date_Label": chart_date_label,
+                "date_label": chart_date_label,
+                "Date": chart_date_label,
+                f"{q_name_a} Date": date_label_a,
+                f"Date ({q_name_a})": date_label_a,
                 f"{q_name_a} Daily": daily_a,
                 f"{q_name_a} Cumulative": cum_a_last,
                 f"{q_name_a} % Complete": pct_a_last,
-                f"{q_name_b} Date": date_b,
-                f"Date ({q_name_b})": date_b,
+                f"{q_name_b} Date": date_label_b,
+                f"Date ({q_name_b})": date_label_b,
                 f"{q_name_b} Daily": daily_b,
                 f"{q_name_b} Cumulative": cum_b_last,
                 f"{q_name_b} % Complete": pct_b_last,
