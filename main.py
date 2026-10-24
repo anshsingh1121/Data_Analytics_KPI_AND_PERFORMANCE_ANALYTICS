@@ -295,12 +295,11 @@ def cmd_generate_demo(args):
 
 def cmd_pipeline(args):
     """Executes the end-to-end data certification performance pipeline."""
-    mode = args.mode or "demo"
+    loader = ConfigLoader()
+    mode = getattr(args, 'mode', None) or loader.get_app_mode() or 'live'
     print("=" * 70)
     print(f"DATA CERTIFICATION KPI SYSTEM — EXECUTING PIPELINE [{mode.upper()} MODE]")
     print("=" * 70)
-
-    loader = ConfigLoader()
     run_hist = RunHistory("data/processed")
     run_id = run_hist.start_run()
     logger.info(f"Started pipeline run ID: {run_id}")
@@ -424,37 +423,30 @@ def cmd_pipeline(args):
         disc_resolved.to_csv('data/processed/discrepancies_processed.csv', index=False)
         logger.info("Saved processed data to data/processed/")
 
-        # Date-wise campaign processing as specified:
+        # Active non-overlapping campaigns:
         # Q4 2026: Oct 5 - Oct 23, 2026
-        # Q2 2026 / Q1 2026: May 5 - May 22, 2026
+        # Q2 2026: May 5 - May 22, 2026
         # Q4 2025: Oct 6 - Oct 23, 2025
-        # Q2 2025 / Q1 2025: Apr 7 - Apr 25, 2025
-        target_quarters = [
-            'Q1-2025', 'Q2-2025', 'Q3-2025', 'Q4-2025',
-            'Q1-2026', 'Q2-2026', 'Q3-2026', 'Q4-2026'
-        ]
+        # Q2 2025: Apr 7 - Apr 25, 2025
+        target_quarters = ['Q2-2025', 'Q4-2025', 'Q2-2026', 'Q4-2026']
         quarter_labels = {
-            'Q1-2025': 'Apr 7 - Apr 25, 2025',
             'Q2-2025': 'Apr 7 - Apr 25, 2025',
-            'Q3-2025': 'Jul 1 - Sep 30, 2025',
             'Q4-2025': 'Oct 6 - Oct 23, 2025',
-            'Q1-2026': 'May 5 - May 22, 2026',
             'Q2-2026': 'May 5 - May 22, 2026',
-            'Q3-2026': 'Jul 1 - Jul 31, 2026',
             'Q4-2026': 'Oct 5 - Oct 23, 2026'
         }
 
         print("\n" + "=" * 70)
-        print("ANNUAL QUARTER BREAKDOWN (Date-Wise Specified Campaigns)")
+        print("ANNUAL QUARTER BREAKDOWN (Active Non-Overlapping Campaigns)")
         print("=" * 70)
         quarterly_results = {}
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
 
         alias_map = {
             'Q2-2026': ['Q2-2026', 'Q1-2026'],
-            'Q1-2026': ['Q1-2026', 'Q2-2026'],
+            'Q4-2026': ['Q4-2026'],
             'Q2-2025': ['Q2-2025', 'Q1-2025'],
-            'Q1-2025': ['Q1-2025', 'Q2-2025']
+            'Q4-2025': ['Q4-2025']
         }
 
         for q_name in target_quarters:
@@ -550,8 +542,8 @@ def cmd_pipeline(args):
                 curr_disc = disc_resolved
                 curr_kpis = kpi_engine.calculate_all_kpis(curr_tasks, curr_disc, working_days=curr_meta.get('elapsed_working_days', 15))
 
-        # Prior cycle for comparison (sequential Q1-2026)
-        prev_kpis = quarterly_results['Q1-2026']['kpis']
+        # Prior cycle for comparison (sequential Q2-2026 Spring)
+        prev_kpis = quarterly_results['Q2-2026']['kpis']
 
         # Step 7: Cycle Comparisons & Multi-Quarter Consolidated Matrix
         comp_rows = cycle_mgr.compare_metrics(curr_kpis, prev_kpis, mode="like_for_like")
@@ -572,32 +564,32 @@ def cmd_pipeline(args):
             ('kpi_12_sla_achievement', 'Final SLA Achievement %', '%')
         ]
 
-        # Helper: Build single-year Q1 vs Q4 comparison table
-        def _build_year_q1_vs_q4(yr: int):
-            q1_k = f"Q1-{yr}"
+        # Helper: Build single-year Spring (Q2) vs Autumn (Q4) comparison table
+        def _build_year_spring_vs_autumn(yr: int):
+            q2_k = f"Q2-{yr}"
             q4_k = f"Q4-{yr}"
-            q1_dict = quarterly_results[q1_k]['kpis']
+            q2_dict = quarterly_results[q2_k]['kpis']
             q4_dict = quarterly_results[q4_k]['kpis']
-            q1_lbl = quarter_labels.get(q1_k, q1_k)
+            q2_lbl = quarter_labels.get(q2_k, q2_k)
             q4_lbl = quarter_labels.get(q4_k, q4_k)
             rows = []
             for k_code, k_label, k_unit in kpi_keys:
-                v1 = q1_dict.get(k_code, {}).get('value')
+                v2 = q2_dict.get(k_code, {}).get('value')
                 v4 = q4_dict.get(k_code, {}).get('value')
                 diff = None
-                if v1 is not None and v4 is not None:
-                    diff = round(v4 - v1, 2)
+                if v2 is not None and v4 is not None:
+                    diff = round(v4 - v2, 2)
                 rows.append({
                     "KPI Metric": k_label,
                     "Unit": k_unit,
-                    f"{q1_k} ({q1_lbl})": f"{v1}{k_unit}" if v1 is not None else "N/A",
-                    f"{q4_k} ({q4_lbl})": f"{v4}{k_unit}" if v4 is not None else "N/A",
-                    f"Change ({q4_k} vs {q1_k})": f"{diff:+}{k_unit}" if diff is not None else "N/A"
+                    f"Spring {q2_k} ({q2_lbl})": f"{v2}{k_unit}" if v2 is not None else "N/A",
+                    f"Autumn {q4_k} ({q4_lbl})": f"{v4}{k_unit}" if v4 is not None else "N/A",
+                    f"Change (Autumn vs Spring)": f"{diff:+}{k_unit}" if diff is not None else "N/A"
                 })
             return pd.DataFrame(rows)
 
-        comp_2026_df = _build_year_q1_vs_q4(2026)
-        comp_2025_df = _build_year_q1_vs_q4(2025)
+        comp_2026_df = _build_year_spring_vs_autumn(2026)
+        comp_2025_df = _build_year_spring_vs_autumn(2025)
 
         # All-quarters overview table
         multi_q_rows = []
@@ -636,8 +628,8 @@ def cmd_pipeline(args):
         # Export CSVs
         csv_files = csv_exp.export_all({
             "kpi_summary": kpi_sum_df,
-            "2026_q1_vs_q4_comparison": comp_2026_df,
-            "2025_q1_vs_q4_comparison": comp_2025_df,
+            "2026_spring_vs_autumn_comparison": comp_2026_df,
+            "2025_spring_vs_autumn_comparison": comp_2025_df,
             "all_quarters_comparison": multi_q_df,
             "cycle_comparison": comp_df,
             "daily_trends": daily_df,
@@ -648,10 +640,10 @@ def cmd_pipeline(args):
             "data_quality_report": qa_df
         })
 
-        # Export consolidated Excel with dedicated 2026 and 2025 Q1 vs Q4 comparison tabs
+        # Export consolidated Excel with dedicated 2026 and 2025 Spring vs Autumn comparison tabs
         excel_path = excel_exp.export({
-            "2026 Q1 vs Q4": comp_2026_df,
-            "2025 Q1 vs Q4": comp_2025_df,
+            "2026 Spring vs Autumn": comp_2026_df,
+            "2025 Spring vs Autumn": comp_2025_df,
             "All Quarters Overview": multi_q_df,
             "Management Summary": kpi_sum_df,
             "Certifier Productivity": prod_df,
@@ -705,7 +697,8 @@ def cmd_compare_cycles(args):
     comp_path = 'reports/cycle_comparison.csv'
     if not os.path.exists(comp_path):
         print("Cycle comparison report not found. Running pipeline first...")
-        cmd_pipeline(argparse.Namespace(mode="demo"))
+        loader = ConfigLoader()
+        cmd_pipeline(argparse.Namespace(mode=loader.get_app_mode(), skip_fetch=False))
     
     if os.path.exists(comp_path):
         df = pd.read_csv(comp_path)
@@ -717,7 +710,8 @@ def cmd_export(args):
     print("=" * 70)
     print("DATA CERTIFICATION KPI SYSTEM — REPORT EXPORTER")
     print("=" * 70)
-    return cmd_pipeline(argparse.Namespace(mode="demo"))
+    loader = ConfigLoader()
+    return cmd_pipeline(argparse.Namespace(mode=loader.get_app_mode(), skip_fetch=False))
 
 def cmd_deadline_check(args):
     """Executes deadline check and SLA risk analysis."""
@@ -726,8 +720,9 @@ def cmd_deadline_check(args):
     print("=" * 70)
     tasks_path = 'data/processed/cert_tasks_processed.csv'
     if not os.path.exists(tasks_path):
-        print("Processed tasks dataset not found. Generating demo data...")
-        cmd_pipeline(argparse.Namespace(mode="demo"))
+        print("Processed tasks dataset not found. Running pipeline first...")
+        loader = ConfigLoader()
+        cmd_pipeline(argparse.Namespace(mode=loader.get_app_mode(), skip_fetch=False))
 
     tasks = pd.read_csv(tasks_path)
     monitor = DeadlineMonitor(warning_window_days=5)
@@ -845,8 +840,8 @@ def cmd_check_dates(args):
         print(f"\nDiscrepancies dataset : {disc_path} ({len(df_d):,} records)")
 
     print("\n[TIP] Dashboard Usage:")
-    print("  In the Streamlit Dashboard, go to 'Compare Any 2 Quarters (Manual Dates)'")
-    print("  or '2026: Q1 vs Q4 Comparison' and enter the start and end dates shown above")
+    print("  In the Streamlit Dashboard, go to '📈 Daily Trends & Quarter Velocity'")
+    print("  or '⚖️ 2026 & 2025 Quarter Deep Dive' to view Spring (Q2) vs Autumn (Q4) comparisons")
     print("  to perfectly match your corporate ServiceNow tasks!")
     print("=" * 70)
     return 0
@@ -864,7 +859,7 @@ def main():
     subparsers.add_parser("generate-demo", help="Generate synthetic certification test datasets")
     
     p_pipe = subparsers.add_parser("pipeline", help="Execute complete analytical data pipeline")
-    p_pipe.add_argument("--mode", choices=["demo", "live"], default="demo", help="Execution mode (demo or live)")
+    p_pipe.add_argument("--mode", choices=["demo", "live"], default=None, help="Execution mode (demo or live, defaults to APP_MODE in .env or settings)")
     p_pipe.add_argument("--skip-fetch", "--cached", action="store_true", help="Skip API fetch and use already-saved records from data/processed/")
 
     subparsers.add_parser("compare-cycles", help="Compare current vs previous certification cycles")

@@ -10,9 +10,13 @@ class TaskExtractor:
 
     def __init__(self, api_client: Any, config: Dict[str, Any], field_mapping: Dict[str, str]):
         self.api_client = api_client
-        self.config = config
-        self.field_mapping = field_mapping
-        self.table_name = self.config.get('task_table', 'cert_task')
+        self.config = config or {}
+        self.field_mapping = field_mapping or {}
+        self.table_name = (
+            self.config.get('tables', {}).get('cert_task')
+            or self.config.get('task_table')
+            or 'cert_task'
+        )
 
     def extract(self, start_date: Optional[str] = None, end_date: Optional[str] = None, full_refresh: bool = False) -> pd.DataFrame:
         """Extracts task records."""

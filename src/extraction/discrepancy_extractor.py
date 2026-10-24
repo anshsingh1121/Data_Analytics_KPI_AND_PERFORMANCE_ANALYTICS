@@ -9,9 +9,13 @@ class DiscrepancyExtractor:
 
     def __init__(self, api_client: Any, config: Dict[str, Any], field_mapping: Dict[str, str]):
         self.api_client = api_client
-        self.config = config
-        self.field_mapping = field_mapping
-        self.table_name = self.config.get('discrepancy_table', 'u_failed_data_certifications')
+        self.config = config or {}
+        self.field_mapping = field_mapping or {}
+        self.table_name = (
+            self.config.get('tables', {}).get('failed_data_certifications')
+            or self.config.get('discrepancy_table')
+            or 'u_failed_data_certifications'
+        )
 
     def extract(self, start_date: Optional[str] = None, end_date: Optional[str] = None, full_refresh: bool = False) -> pd.DataFrame:
         """Extracts discrepancy records."""

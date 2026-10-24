@@ -1,3 +1,5 @@
+import logging
+from typing import Dict, Any, Optional, List
 import requests
 from src.connectors.ssl_helper import diagnose_ssl_error
 
@@ -8,9 +10,10 @@ class ConnectionDiagnostics:
 
     def __init__(self, api_client: Any, config: Dict[str, Any]):
         self.api_client = api_client
-        self.config = config
-        self.task_table = self.config.get('task_table', 'cert_task')
-        self.disc_table = self.config.get('discrepancy_table', 'u_failed_data_certifications')
+        self.config = config or {}
+        tables = self.config.get('tables') or self.config.get('provider', {}).get('tables') or {}
+        self.task_table = tables.get('cert_task') or self.config.get('task_table') or 'cert_task'
+        self.disc_table = tables.get('failed_data_certifications') or self.config.get('discrepancy_table') or 'u_failed_data_certifications'
 
     def run_diagnostics(self) -> Dict[str, Any]:
         """Runs full suite of connection diagnostics with detailed root cause analysis."""
