@@ -504,14 +504,21 @@ if page == "📊 Executive Overview":
             color_continuous_scale=["#EF4444", "#F59E0B", "#10B981"],
             range_color=[70, 100]
         )
-        fig_bench.add_vline(x=95.0, line_dash="dash", line_color="#DC2626", annotation_text="Target: 95%", annotation_position="bottom right")
+        fig_bench.add_vline(
+            x=95.0,
+            line_dash="dash",
+            line_color="#DC2626",
+            annotation_text="Target: 95%",
+            annotation_position="top",
+            annotation=dict(y=1.05, yref="y domain", yanchor="bottom", font=dict(color="#DC2626", size=11))
+        )
         fig_bench.update_layout(
             title="Core Operational KPIs vs SLA Target (95%)",
             xaxis_title="Percentage (%)",
             xaxis_range=[0, 120],
             yaxis_title="",
-            height=360,
-            margin=dict(l=10, r=45, t=40, b=30),
+            height=370,
+            margin=dict(l=10, r=45, t=55, b=30),
             coloraxis_showscale=False
         )
         fig_bench.update_traces(texttemplate='%{text:.1f}%', textposition='outside', cliponaxis=False)
