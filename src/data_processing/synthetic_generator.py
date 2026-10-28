@@ -143,6 +143,8 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
                 'state': status,
                 'assigned_to': certifier,
                 'cmdb_ci': app,
+                'short_description': f"Data Certification Review - {app} ({cycle})",
+                'description': f"Certify CMDB configuration data, ownership, and operational attributes for {app} during {cycle} campaign.",
                 'sys_created_on': created_on.strftime('%Y-%m-%d %H:%M:%S'),
                 'due_date': due_date.strftime('%Y-%m-%d %H:%M:%S'),
                 'closed_at': closed_at.strftime('%Y-%m-%d %H:%M:%S') if closed_at else None,
@@ -155,10 +157,58 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
                 disc_id = str(uuid.uuid4())
                 issue_category = random.choice([
                     'Missing Data', 'Invalid Format', 'Stale Reference', 
-                    'Inconsistent Value', 'Unauthorized Change', 'Duplicate Entry'
+                    'Inconsistent Value', 'Unauthorized Change', 'Duplicate Entry',
+                    'Orphan Record', 'Access Issue'
                 ])
                 field_name = random.choice(['owner', 'cost_center', 'department', 'manager', 'location', 'classification'])
                 
+                desc_templates = {
+                    'Missing Data': [
+                        f"Required field '{field_name}' is blank or unassigned in CMDB record.",
+                        f"Missing mandatory value: No valid {field_name} specified during data certification check.",
+                        f"Primary {field_name} is empty or null for CI {app}.",
+                        f"Unassigned custodian: {field_name} not populated in application catalog."
+                    ],
+                    'Stale Reference': [
+                        f"Stale record: Asset marked operational but {field_name} indicates decommissioned status.",
+                        f"Obsolete configuration: CI has no discovery updates for >90 days, legacy status detected.",
+                        f"Dormant CI: System was retired physically but active record remains in {field_name} audit.",
+                        f"Decommissioning gap: Equipment sunset or shut down but remains active in CMDB."
+                    ],
+                    'Inconsistent Value': [
+                        f"Value mismatch: {field_name} differs from authoritative SAP / HR system of record.",
+                        f"Attribute discrepancy: Current {field_name} value does not match physical inventory audit.",
+                        f"Inconsistent data: Conflicting {field_name} detected between discovery and CMDB.",
+                        f"Incorrect value: {field_name} deviates from approved enterprise baseline."
+                    ],
+                    'Invalid Format': [
+                        f"Naming standard violation: {field_name} does not conform to enterprise regex convention.",
+                        f"Syntax error: Invalid characters or malformed pattern detected in {field_name}.",
+                        f"Format non-compliance: {field_name} violates corporate CMDB naming rules."
+                    ],
+                    'Orphan Record': [
+                        f"Orphan CI: No parent business service or upstream relationship mapped in CMDB.",
+                        f"Unlinked dependency: CI has missing relationship and broken link to application tier.",
+                        f"Isolated asset: No relation found linking {app} to production infrastructure cluster."
+                    ],
+                    'Unauthorized Change': [
+                        f"Unauthorized change detected on {field_name} without an approved Change Request RFC.",
+                        f"Out of band drift: Configuration modified without change management authorization.",
+                        f"Untracked modification: Unexpected change detected in {field_name} during audit."
+                    ],
+                    'Duplicate Entry': [
+                        f"Duplicate CI: Multiple active entries found with the same {field_name} and serial identifier.",
+                        f"Redundant record: Duplicate entry collision detected against master CI register."
+                    ],
+                    'Access Issue': [
+                        f"Certifier unable to verify: Assigned custodian role is vacant or permission revoked.",
+                        f"Access issue: Custodian left company or inactive user assigned as certifier."
+                    ]
+                }
+                
+                chosen_desc = random.choice(desc_templates.get(issue_category, [f"Discrepancy detected in {field_name}"]))
+                short_desc = f"{issue_category}: {field_name} discrepancy on {app}"
+
                 is_resolved = (random.random() < 0.88)
                 created_disc = created_on + timedelta(days=random.randint(1, 3))
                 resolved_disc = None
@@ -174,6 +224,8 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
                     'u_field': field_name,
                     'u_cmdb_ci': app,
                     'u_issue_category': issue_category,
+                    'short_description': short_desc,
+                    'description': chosen_desc,
                     'u_status': 'Resolved' if is_resolved else 'Open',
                     'sys_created_on': created_disc.strftime('%Y-%m-%d %H:%M:%S'),
                     'u_resolved_on': resolved_disc.strftime('%Y-%m-%d %H:%M:%S') if resolved_disc else None,

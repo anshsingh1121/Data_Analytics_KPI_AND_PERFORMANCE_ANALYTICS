@@ -165,6 +165,7 @@ with st.sidebar:
             "⚖️ 2026 & 2025 Quarter Deep Dive",
             "🗓️ Annual Master Matrix (All 4 Quarters)",
             "👥 Certifier Performance Leaderboard",
+            "🔍 Discrepancy Reason & Scenario Analytics",
             "🔌 ServiceNow Integration Status"
         ],
         index=0
@@ -985,7 +986,306 @@ elif page == "👥 Certifier Performance Leaderboard":
         st.info("No certifier performance records available for this filter selection.")
 
 # -----------------------------------------------------------------------------
-# PAGE 5: SERVICENOW INTEGRATION STATUS
+# PAGE 6: DISCREPANCY REASON & SCENARIO ANALYTICS (RCA)
+# -----------------------------------------------------------------------------
+elif page == "🔍 Discrepancy Reason & Scenario Analytics":
+    st.markdown('<div class="main-header">🔍 Discrepancy Root Cause Analysis (RCA) & Failure Scenarios</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-header">Keyword-based grouping and natural language categorization of failed data certification tasks to identify systematic failure reasons.</div>', unsafe_allow_html=True)
+
+    from src.analytics.discrepancy_rca import DiscrepancyRCAEngine, SCENARIOS_TAXONOMY
+    rca_engine = DiscrepancyRCAEngine()
+
+    # Scope selector: Active Campaign vs All Campaigns
+    col_scope1, col_scope2 = st.columns([2, 3])
+    with col_scope1:
+        rca_scope = st.radio(
+            "Analysis Scope:",
+            [f"Active Campaign ({selected_cycle})", "All 4 Historical Campaigns (Consolidated)"],
+            horizontal=True
+        )
+
+    if rca_scope.startswith("Active Campaign") and not c_disc.empty:
+        raw_rca_df = c_disc.copy()
+        scope_tasks_df = c_tasks.copy()
+        scope_label = selected_cycle
+    elif disc_df is not None and not disc_df.empty:
+        raw_rca_df = disc_df.copy()
+        scope_tasks_df = tasks_df.copy() if tasks_df is not None else pd.DataFrame()
+        scope_label = "All Campaigns"
+    else:
+        raw_rca_df = pd.DataFrame()
+        scope_tasks_df = pd.DataFrame()
+        scope_label = "None"
+
+    if raw_rca_df.empty:
+        st.warning("⚠️ No discrepancy records available to analyze for the selected campaign scope.")
+    else:
+        with st.spinner("Analyzing discrepancy descriptions and clustering failure scenarios..."):
+            enriched_rca_df = rca_engine.categorize_dataframe(raw_rca_df, tasks_df=scope_tasks_df)
+
+        total_disc = len(enriched_rca_df)
+        classified_mask = enriched_rca_df['rca_scenario'] != "Unclassified / Custom Discrepancy"
+        classified_count = int(classified_mask.sum())
+        classified_rate = (classified_count / total_disc * 100.0) if total_disc > 0 else 0.0
+
+        scenario_counts = enriched_rca_df['rca_scenario'].value_counts()
+        top_scenario_name = scenario_counts.index[0] if not scenario_counts.empty else "N/A"
+        top_scenario_count = int(scenario_counts.iloc[0]) if not scenario_counts.empty else 0
+        top_scenario_pct = (top_scenario_count / total_disc * 100.0) if total_disc > 0 else 0.0
+
+        crit_high_mask = enriched_rca_df['rca_risk_level'].isin(['Critical', 'High'])
+        crit_high_count = int(crit_high_mask.sum())
+        crit_high_pct = (crit_high_count / total_disc * 100.0) if total_disc > 0 else 0.0
+
+        # KPI Scorecard
+        m1, m2, m3, m4 = st.columns(4)
+        m1.metric("Total Discrepancies", f"{total_disc:,}", f"Scope: {scope_label}")
+        m2.metric("Classified Coverage", f"{classified_rate:.1f}%", f"{classified_count:,} matched scenarios")
+        m3.metric("Primary Failure Driver", f"{top_scenario_name[:24]}...", f"{top_scenario_pct:.1f}% of volume ({top_scenario_count:,})")
+        m4.metric("High & Critical Risks", f"{crit_high_count:,}", f"{crit_high_pct:.1f}% require urgent fix", delta_color="inverse")
+
+        st.markdown("---")
+
+        # Interactive Filter Bar
+        st.markdown("##### 🎛️ Interactive Scenario & Keyword Filters")
+        f1, f2, f3 = st.columns([2, 1, 2])
+
+        all_scenarios = sorted(enriched_rca_df['rca_scenario'].unique().tolist())
+        all_risks = ['Critical', 'High', 'Medium', 'Low']
+        available_risks = [r for r in all_risks if r in enriched_rca_df['rca_risk_level'].unique()]
+
+        with f1:
+            filter_scenarios = st.multiselect(
+                "Filter by Failure Scenario:",
+                options=all_scenarios,
+                default=all_scenarios,
+                help="Select specific failure reasons to focus analysis."
+            )
+        with f2:
+            filter_risks = st.multiselect(
+                "Filter by Risk Level:",
+                options=available_risks,
+                default=available_risks
+            )
+        with f3:
+            kw_search = st.text_input(
+                "Search Descriptions by Custom Keyword:",
+                placeholder="e.g. owner, decommissioned, mismatch, syntax, orphan...",
+                help="Type any word to filter discrepancy records dynamically."
+            )
+
+        # Apply Filters
+        filtered_df = enriched_rca_df[
+            enriched_rca_df['rca_scenario'].isin(filter_scenarios) &
+            enriched_rca_df['rca_risk_level'].isin(filter_risks)
+        ].copy()
+
+        if kw_search and kw_search.strip():
+            kw_clean = kw_search.strip().lower()
+            filtered_df = filtered_df[
+                filtered_df['rca_analyzed_text'].str.lower().str.contains(kw_clean, na=False) |
+                filtered_df['rca_matched_keywords'].str.lower().str.contains(kw_clean, na=False)
+            ]
+
+        st.markdown(f"<span style='color: #475569; font-size: 12px; font-weight: 500;'>Showing <b>{len(filtered_df):,}</b> of <b>{total_disc:,}</b> discrepancy records</span>", unsafe_allow_html=True)
+
+        if filtered_df.empty:
+            st.info("No discrepancy records match your filter criteria. Try adjusting the search keyword or scenario filters.")
+        else:
+            # ROW 1: Scenario Volume by Risk Level (Horizontal Bar) + Root Cause Category Donut
+            r1_col1, r1_col2 = st.columns([3, 2])
+
+            with r1_col1:
+                st.markdown("##### 📊 Discrepancy Failure Scenarios by Volume & Risk Severity")
+                summary_df = rca_engine.get_scenario_summary(filtered_df)
+                
+                # Risk color map
+                risk_colors = {
+                    "Critical": "#991B1B",
+                    "High": "#DC2626",
+                    "Medium": "#D97706",
+                    "Low": "#2563EB"
+                }
+
+                fig_bar = px.bar(
+                    summary_df,
+                    x="Count",
+                    y="rca_scenario",
+                    orientation="h",
+                    color="Risk_Level",
+                    color_discrete_map=risk_colors,
+                    text="Count",
+                    hover_data={"Category": True, "Percentage": ":.1f%", "Action": True},
+                    labels={"Count": "Discrepancy Records", "rca_scenario": "", "Risk_Level": "Risk Level"}
+                )
+                fig_bar.update_layout(
+                    height=360,
+                    margin=dict(l=10, r=30, t=20, b=30),
+                    yaxis=dict(autorange="reversed"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                fig_bar.update_traces(
+                    texttemplate='%{text} (%{customdata[1]:.1f}%)',
+                    textposition='outside',
+                    cliponaxis=False
+                )
+                st.plotly_chart(fig_bar, use_container_width=True)
+
+            with r1_col2:
+                st.markdown("##### 🍩 High-Level Root Cause Category Share")
+                cat_summary = filtered_df.groupby('rca_category').size().reset_index(name='Count')
+                cat_summary['Share'] = (cat_summary['Count'] / cat_summary['Count'].sum() * 100.0).round(1)
+
+                fig_donut = px.pie(
+                    cat_summary,
+                    names="rca_category",
+                    values="Count",
+                    hole=0.5,
+                    color_discrete_sequence=px.colors.qualitative.Safe
+                )
+                fig_donut.update_layout(
+                    height=360,
+                    margin=dict(l=10, r=10, t=20, b=20),
+                    legend=dict(orientation="h", yanchor="bottom", y=-0.2)
+                )
+                fig_donut.update_traces(
+                    textinfo='percent+label',
+                    hovertemplate='<b>%{label}</b><br>Count: %{value:,}<br>Share: %{percent}'
+                )
+                st.plotly_chart(fig_donut, use_container_width=True)
+
+            st.markdown("---")
+
+            # ROW 2: Cross-Application Scenario Distribution + Top Extracted Keywords Explorer
+            r2_col1, r2_col2 = st.columns([1, 1])
+
+            with r2_col1:
+                st.markdown("##### 🏢 Failure Scenarios by Top Applications")
+                app_col = 'u_application' if 'u_application' in filtered_df.columns else ('u_cmdb_ci' if 'u_cmdb_ci' in filtered_df.columns else None)
+                if app_col:
+                    top_apps = filtered_df[app_col].value_counts().nlargest(8).index.tolist()
+                    sub_app_df = filtered_df[filtered_df[app_col].isin(top_apps)]
+
+                    app_cross = sub_app_df.groupby([app_col, 'rca_scenario']).size().reset_index(name='Count')
+
+                    fig_app = px.bar(
+                        app_cross,
+                        x="Count",
+                        y=app_col,
+                        color="rca_scenario",
+                        orientation="h",
+                        barmode="stack",
+                        labels={"Count": "Discrepancy Records", app_col: "Application", "rca_scenario": "Scenario"},
+                        color_discrete_sequence=px.colors.qualitative.Prism
+                    )
+                    fig_app.update_layout(
+                        height=360,
+                        margin=dict(l=10, r=20, t=20, b=30),
+                        yaxis=dict(autorange="reversed"),
+                        legend=dict(orientation="h", yanchor="bottom", y=-0.35, font=dict(size=10)),
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        paper_bgcolor="rgba(0,0,0,0)"
+                    )
+                    st.plotly_chart(fig_app, use_container_width=True)
+                else:
+                    st.info("No application column found to cross-tabulate.")
+
+            with r2_col2:
+                st.markdown("##### 🔤 Top Extracted Failure Keywords in Descriptions")
+                top_kws = rca_engine.extract_top_keywords(filtered_df, top_n=12)
+                if not top_kws.empty:
+                    fig_kw = px.bar(
+                        top_kws,
+                        x="Frequency",
+                        y="Keyword",
+                        orientation="h",
+                        text="Frequency",
+                        color="Frequency",
+                        color_continuous_scale="Blues",
+                        labels={"Frequency": "Occurrences in Descriptions", "Keyword": "Extracted Token"}
+                    )
+                    fig_kw.update_layout(
+                        height=360,
+                        margin=dict(l=10, r=30, t=20, b=30),
+                        yaxis=dict(autorange="reversed"),
+                        coloraxis_showscale=False,
+                        plot_bgcolor="rgba(0,0,0,0)",
+                        paper_bgcolor="rgba(0,0,0,0)"
+                    )
+                    fig_kw.update_traces(
+                        texttemplate='%{text} records',
+                        textposition='outside',
+                        cliponaxis=False
+                    )
+                    st.plotly_chart(fig_kw, use_container_width=True)
+                else:
+                    st.info("No keywords extracted.")
+
+            st.markdown("---")
+
+            # ROW 3: Campaign Scenario Evolution (Active vs Prior Quarter Shift)
+            if 'certification_cycle' in raw_rca_df.columns:
+                unique_cycles = [c for c in ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025'] if c in raw_rca_df['certification_cycle'].unique()]
+                if len(unique_cycles) >= 2:
+                    st.markdown("##### 📈 Campaign Scenario Evolution & Shift Analysis")
+                    c_curr_name = unique_cycles[0]
+                    c_prev_name = unique_cycles[1]
+
+                    curr_disc_slice = raw_rca_df[raw_rca_df['certification_cycle'] == c_curr_name]
+                    prev_disc_slice = raw_rca_df[raw_rca_df['certification_cycle'] == c_prev_name]
+
+                    curr_enc = rca_engine.categorize_dataframe(curr_disc_slice, tasks_df=tasks_df)
+                    prev_enc = rca_engine.categorize_dataframe(prev_disc_slice, tasks_df=tasks_df)
+
+                    comp_shift_df = rca_engine.compare_campaign_scenarios(curr_enc, prev_enc)
+
+                    if not comp_shift_df.empty:
+                        st.caption(f"Comparing failure scenario volume and percentage share shift between **{c_curr_name}** and **{c_prev_name}**.")
+                        st.dataframe(comp_shift_df, use_container_width=True, hide_index=True)
+
+            st.markdown("---")
+
+            # ROW 4: Detailed Record Inspector Table
+            st.markdown("##### 📋 Searchable Discrepancy Record Inspector with Matched Keywords")
+            display_cols = ['number']
+            if 'u_application' in filtered_df.columns: display_cols.append('u_application')
+            if 'u_field' in filtered_df.columns: display_cols.append('u_field')
+            display_cols.extend(['rca_scenario', 'rca_risk_level', 'rca_matched_keywords'])
+            
+            desc_show_col = 'description' if 'description' in filtered_df.columns else ('short_description' if 'short_description' in filtered_df.columns else 'rca_analyzed_text')
+            display_cols.append(desc_show_col)
+            
+            if 'u_status' in filtered_df.columns: display_cols.append('u_status')
+            display_cols.append('rca_recommended_action')
+
+            col_rename_map = {
+                'number': 'Discrepancy #',
+                'u_application': 'Application',
+                'u_field': 'Target Field',
+                'rca_scenario': 'Detected Failure Scenario',
+                'rca_risk_level': 'Risk Level',
+                'rca_matched_keywords': 'Matched Keyword(s)',
+                desc_show_col: 'Description / Failure Reason',
+                'u_status': 'Status',
+                'rca_recommended_action': 'Actionable Next Step'
+            }
+
+            inspect_df = filtered_df[[c for c in display_cols if c in filtered_df.columns]].rename(columns=col_rename_map)
+            st.dataframe(inspect_df, use_container_width=True, height=380, hide_index=True)
+
+            # Export button
+            csv_rca = inspect_df.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label=f"📥 Download Discrepancy RCA Analysis ({scope_label}).csv",
+                data=csv_rca,
+                file_name=f"Discrepancy_RCA_Scenarios_{scope_label}.csv",
+                mime="text/csv"
+            )
+
+# -----------------------------------------------------------------------------
+# PAGE 7: SERVICENOW INTEGRATION STATUS
 # -----------------------------------------------------------------------------
 elif page == "🔌 ServiceNow Integration Status":
     st.markdown('<div class="main-header">ServiceNow Live Integration Status</div>', unsafe_allow_html=True)

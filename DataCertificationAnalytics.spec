@@ -45,6 +45,7 @@ hiddenimports = [
     "src.analytics.backlog_analysis",
     "src.analytics.productivity_analysis",
     "src.analytics.exception_analysis",
+    "src.analytics.discrepancy_rca",
     "src.storage.snapshot_store",
     "src.storage.run_history",
     "src.reporting.report_generator",

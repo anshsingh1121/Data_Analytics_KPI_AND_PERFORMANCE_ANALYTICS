@@ -170,6 +170,17 @@ class ReportGenerator:
         grouped.columns = ["Category", "Total Discrepancies", "Resolved Count", "Open Count", "Resolution Rate %"]
         return grouped.sort_values('Total Discrepancies', ascending=False)
 
+    def build_discrepancy_rca_df(self, disc_df: pd.DataFrame, tasks_df: Optional[pd.DataFrame] = None) -> pd.DataFrame:
+        """
+        Builds comprehensive RCA scenario analysis dataframe with keyword clustering
+        and root-cause categorization of task/discrepancy descriptions.
+        """
+        if disc_df is None or disc_df.empty:
+            return pd.DataFrame()
+        from src.analytics.discrepancy_rca import DiscrepancyRCAEngine
+        engine = DiscrepancyRCAEngine()
+        return engine.categorize_dataframe(disc_df, tasks_df=tasks_df)
+
     def build_certifier_productivity_df(self, tasks_df: pd.DataFrame, working_days: int = 15, sort_by: str = "worst") -> pd.DataFrame:
         """
         Builds certifier performance table with dedicated metrics to identify

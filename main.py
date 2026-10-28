@@ -346,7 +346,7 @@ def cmd_pipeline(args):
         # Step 2: Normalization
         normalizer = DataNormalizer(field_mapping={}, tz_config=loader.settings.get('timezone', 'UTC'))
         date_cols = ['sys_created_on', 'due_date', 'closed_at', 'u_resolved_on']
-        string_cols = ['state', 'assigned_to', 'cmdb_ci', 'u_issue_category', 'u_status']
+        string_cols = ['state', 'assigned_to', 'cmdb_ci', 'u_issue_category', 'u_status', 'description', 'short_description', 'u_resolution_notes']
         
         norm_tasks = normalizer.normalize(raw_tasks, date_cols, string_cols)
         norm_disc = normalizer.normalize(raw_disc, date_cols, string_cols)
@@ -636,6 +636,7 @@ def cmd_pipeline(args):
         prod_df = rep_gen.build_certifier_productivity_df(curr_tasks, curr_meta.get('elapsed_working_days', 15), sort_by="worst")
         exc_df = rep_gen.build_exception_resolution_df(curr_disc)
         qa_df = rep_gen.build_data_quality_report_df(tasks_resolved, disc_resolved, rel_stats)
+        rca_df = rep_gen.build_discrepancy_rca_df(curr_disc, tasks_df=curr_tasks)
 
         # Export CSVs
         csv_files = csv_exp.export_all({
@@ -647,6 +648,7 @@ def cmd_pipeline(args):
             "daily_trends": daily_df,
             "backlog_analysis": backlog_df,
             "discrepancy_analysis": disc_df,
+            "discrepancy_rca_scenarios": rca_df,
             "certifier_productivity_worst_first": prod_df,
             "exception_resolution": exc_df,
             "data_quality_report": qa_df
@@ -663,6 +665,7 @@ def cmd_pipeline(args):
             "Daily Trends": daily_df,
             "Backlog Analysis": backlog_df,
             "Discrepancies": disc_df,
+            "Discrepancy RCA Scenarios": rca_df,
             "Exceptions": exc_df,
             "Data Quality": qa_df
         }, metadata={"mode": mode, "cycle_name": curr_cycle_name})
