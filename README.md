@@ -188,11 +188,28 @@ After running the pipeline, reports are saved to `reports/`:
 - **`daily_trends.csv`**: Day-by-day closures, cumulative count, and 7-day moving average.
 - **`backlog_analysis.csv`**: Open task list, age in days, aging bucket, and overdue flag.
 - **`discrepancy_analysis.csv`**: Failure categories, resolved counts, and resolution rates.
+- **`discrepancy_rca_scenarios.csv`**: Keyword-classified root-cause failure scenarios with matched tokens and actions.
 - **`certifier_productivity.csv`**: Assigned workload, closures, completion rate, daily rate.
 - **`exception_resolution.csv`**: Turnaround duration in days per discrepancy.
 - **`data_quality_report.csv`**: Audit completeness scores and validation outcomes.
 
 Historical snapshots are archived in `data/snapshots/` as `.parquet` files indexed in `snapshot_index.sqlite`.
+
+---
+
+## 7. Discrepancy Root Cause Analysis (RCA) & Scenarios
+
+The system includes a dedicated NLP keyword-clustering engine that categorizes failed certification tasks and discrepancies into **8 systematic root cause scenarios**:
+1. **Missing / Unassigned Mandatory Data** (`missing`, `empty`, `blank`, `unassigned`, `no owner`)
+2. **Stale / Obsolete / Decommissioning Gaps** (`stale`, `retired`, `decommissioned`, `dormant`, `legacy`)
+3. **Attribute Value Mismatch & Inaccuracy** (`mismatch`, `incorrect`, `differs`, `does not match`)
+4. **Naming & Format Standard Violations** (`format`, `syntax`, `naming convention`, `invalid ip`)
+5. **Orphaned Records & Broken Relationships** (`orphan`, `unlinked`, `no parent`, `broken link`)
+6. **Unauthorized Changes & Configuration Drift** (`unauthorized`, `out of band`, `no change ticket`)
+7. **Duplicate / Redundant Configuration Items** (`duplicate`, `repeated`, `redundant`, `collision`)
+8. **Access, Role & Custodian Governance** (`access`, `permission`, `role vacant`, `certifier unable`)
+
+> 📖 **Full Logic Guide**: For detailed step-by-step logic, trigger keywords, and dashboard visuals, see **[Discrepancy RCA Logic Guide](docs/discrepancy_rca_logic.md)**.
 
 ---
 
