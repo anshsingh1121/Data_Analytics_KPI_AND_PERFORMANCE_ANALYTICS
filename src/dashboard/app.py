@@ -1431,72 +1431,40 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                 )
                 st.plotly_chart(fig_donut, use_container_width=True)
 
-            st.markdown("---")
+            # ROW 2: Cross-Application Category Breakdown (Shown when Application/CI Data is Present)
+            candidate_app_cols = [
+                'u_application', 'application', 'u_cmdb_ci', 'cmdb_ci',
+                'configuration_item', 'ci', 'u_ci', 'cmdb_ci_business_app'
+            ]
+            app_col = next((c for c in candidate_app_cols if c in filtered_df.columns and filtered_df[c].dropna().nunique() > 0), None)
 
-            # ROW 2: Cross-Application Category Breakdown + Top Extracted Keywords
-            r2_col1, r2_col2 = st.columns([1, 1])
-
-            with r2_col1:
+            if app_col:
+                st.markdown("---")
                 st.markdown("##### 🏢 Discrepancies Across Top Enterprise Applications")
-                app_col = 'u_application' if 'u_application' in filtered_df.columns else ('u_cmdb_ci' if 'u_cmdb_ci' in filtered_df.columns else None)
-                if app_col:
-                    top_apps = filtered_df[app_col].value_counts().nlargest(8).index.tolist()
-                    sub_app_df = filtered_df[filtered_df[app_col].isin(top_apps)]
+                top_apps = filtered_df[app_col].value_counts().nlargest(10).index.tolist()
+                sub_app_df = filtered_df[filtered_df[app_col].isin(top_apps)]
 
-                    app_cross = sub_app_df.groupby([app_col, 'rca_scenario']).size().reset_index(name='Count')
+                app_cross = sub_app_df.groupby([app_col, 'rca_scenario']).size().reset_index(name='Count')
 
-                    fig_app = px.bar(
-                        app_cross,
-                        x="Count",
-                        y=app_col,
-                        color="rca_scenario",
-                        orientation="h",
-                        barmode="stack",
-                        labels={"Count": "Discrepancies", app_col: "Application", "rca_scenario": "Category"},
-                        color_discrete_sequence=px.colors.qualitative.Safe
-                    )
-                    fig_app.update_layout(
-                        height=380,
-                        margin=dict(l=10, r=20, t=20, b=30),
-                        yaxis=dict(autorange="reversed"),
-                        legend=dict(orientation="h", yanchor="bottom", y=-0.4, font=dict(size=9)),
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)"
-                    )
-                    st.plotly_chart(fig_app, use_container_width=True)
-                else:
-                    st.info("No application column available for cross-tabulation.")
-
-            with r2_col2:
-                st.markdown("##### 🔤 Top Failure Keyword Tokens in Descriptions")
-                top_kws = rca_engine.extract_top_keywords(filtered_df, top_n=12)
-                if not top_kws.empty:
-                    fig_kw = px.bar(
-                        top_kws,
-                        x="Frequency",
-                        y="Keyword",
-                        orientation="h",
-                        text="Frequency",
-                        color="Frequency",
-                        color_continuous_scale="Blues",
-                        labels={"Frequency": "Occurrences in Descriptions", "Keyword": "Extracted Token"}
-                    )
-                    fig_kw.update_layout(
-                        height=380,
-                        margin=dict(l=10, r=30, t=20, b=30),
-                        yaxis=dict(autorange="reversed"),
-                        coloraxis_showscale=False,
-                        plot_bgcolor="rgba(0,0,0,0)",
-                        paper_bgcolor="rgba(0,0,0,0)"
-                    )
-                    fig_kw.update_traces(
-                        texttemplate='%{text} mentions',
-                        textposition='outside',
-                        cliponaxis=False
-                    )
-                    st.plotly_chart(fig_kw, use_container_width=True)
-                else:
-                    st.info("No keywords extracted.")
+                fig_app = px.bar(
+                    app_cross,
+                    x="Count",
+                    y=app_col,
+                    color="rca_scenario",
+                    orientation="h",
+                    barmode="stack",
+                    labels={"Count": "Discrepancies", app_col: "Application", "rca_scenario": "Category"},
+                    color_discrete_sequence=px.colors.qualitative.Safe
+                )
+                fig_app.update_layout(
+                    height=380,
+                    margin=dict(l=10, r=20, t=20, b=30),
+                    yaxis=dict(autorange="reversed"),
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, font=dict(size=10)),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
+                )
+                st.plotly_chart(fig_app, use_container_width=True)
 
             st.markdown("---")
 
