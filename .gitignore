@@ -38,6 +38,8 @@ data/runs/*
 dist/
 build/
 dist_corporate/
+*.zip
+*.spec
 *.spec.bak
 
 # Generated Reports & Logs

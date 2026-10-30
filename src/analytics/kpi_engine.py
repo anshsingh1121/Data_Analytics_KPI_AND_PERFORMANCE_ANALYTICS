@@ -632,7 +632,7 @@ class KPIEngine:
             )
 
         if state_col and state_col in disc_df.columns:
-            resolved = disc_df[disc_df[state_col].isin(['Resolved', 'Closed', 'resolved'])].copy()
+            resolved = disc_df[disc_df[state_col].astype(str).str.strip().str.lower().isin(['resolved', 'closed', 'closed complete', 'complete', '3'])].copy()
         else:
             resolved = disc_df.dropna(subset=[resolved_col]).copy()
 

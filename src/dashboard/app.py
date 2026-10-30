@@ -315,6 +315,41 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
     )
     return res_kpis, q_t, q_d, effective_meta
 
+def count_resolved_discrepancies(df_disc, df_tasks=None):
+    """
+    Counts resolved discrepancies according to enterprise ServiceNow standards:
+    1. State/status of the discrepancy in u_failed_data_certifications is:
+       'Closed Complete', 'Resolved', 'Closed', 'Complete', or numeric value 3.
+    2. OR parent cert_task is marked as 'Closed Complete'.
+    """
+    if df_disc is None or df_disc.empty:
+        return 0, 0
+    total = len(df_disc)
+    resolved_vals = {'resolved', 'closed', 'closed complete', 'complete', '3'}
+
+    resolved_mask = pd.Series(False, index=df_disc.index)
+
+    # 1. Check discrepancy record's own status/state fields
+    for col in ['state', 'status', 'u_status']:
+        if col in df_disc.columns:
+            cleaned = df_disc[col].astype(str).str.strip().str.lower()
+            resolved_mask = resolved_mask | cleaned.isin(resolved_vals)
+
+    # 2. Check parent certification task state in cert_task (tasks marked as closed complete)
+    if df_tasks is not None and not df_tasks.empty:
+        task_state_col = 'state' if 'state' in df_tasks.columns else ('status' if 'status' in df_tasks.columns else None)
+        task_id_col = 'sys_id' if 'sys_id' in df_tasks.columns else ('task_id' if 'task_id' in df_tasks.columns else 'number')
+
+        if task_state_col and task_id_col:
+            task_clean_state = df_tasks[task_state_col].astype(str).str.strip().str.lower()
+            closed_tasks = set(df_tasks[task_clean_state.isin(['closed complete', 'closed', 'complete', '3'])][task_id_col].dropna().unique())
+            for t_col in ['u_certification_task', 'linked_task', 'cert_task', 'task_id']:
+                if t_col in df_disc.columns:
+                    resolved_mask = resolved_mask | df_disc[t_col].isin(closed_tasks)
+
+    resolved_count = int(resolved_mask.sum())
+    return resolved_count, total
+
 # Ensure c_tasks has valid due_date matching selected cycle end date
 if not c_tasks.empty and curr_meta.get('end_date'):
     curr_deadline = pd.to_datetime(f"{curr_meta['end_date']} 23:59:59")
@@ -368,19 +403,72 @@ if page == "📊 Executive Overview":
     st.markdown("---")
 
     # -------------------------------------------------------------------------
-    # 5 Executive KPI Cards (Replacing Workload, Backlog & Quality Boxes)
+    # Comparative Cycle Resolutions (Sequential Previous & YoY)
     # -------------------------------------------------------------------------
-    total_disc = len(c_disc) if c_disc is not None else 0
-    resolved_disc = 0
-    if c_disc is not None and not c_disc.empty:
-        for st_cand in ['state', 'status', 'u_status']:
-            if st_cand in c_disc.columns:
-                resolved_disc = int(c_disc[st_cand].isin(['Resolved', 'Closed', 'resolved']).sum())
-                break
+    cycle_order = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
+    if selected_cycle in cycle_order:
+        idx = cycle_order.index(selected_cycle)
+        prev_cycle = cycle_order[idx + 1] if idx + 1 < len(cycle_order) else None
+    else:
+        prev_cycle = 'Q2-2026'
 
-    comp_val = round(float(k1.get('value', 97.0)))
-    sla_val = round(float(k12.get('value', 95.0))) if k12.get('value') is not None else 95
-    disc_closed_pct = round((resolved_disc / max(1, total_disc)) * 100.0) if total_disc > 0 else 89
+    prev_kpis, prev_tasks, prev_disc, prev_meta = get_quarter_kpis(tasks_df, disc_df, prev_cycle) if prev_cycle else ({}, pd.DataFrame(), pd.DataFrame(), {})
+
+    # YoY comparative cycle
+    yoy_map = {'Q4-2026': 'Q4-2025', 'Q2-2026': 'Q2-2025'}
+    yoy_cycle = yoy_map.get(selected_cycle)
+    yoy_kpis, _, _, _ = get_quarter_kpis(tasks_df, disc_df, yoy_cycle) if yoy_cycle else ({}, pd.DataFrame(), pd.DataFrame(), {})
+
+    # -------------------------------------------------------------------------
+    # 5 Executive KPI Cards (Fully Dynamic Across All Quarters)
+    # -------------------------------------------------------------------------
+    comp_val = round(float(k1.get('value', 97.0) or 0.0))
+    sla_val = round(float(k12.get('value', 95.0) or 0.0)) if k12.get('value') is not None else 95
+
+    # 1. Daily Closure Rate (Dynamic Cycle-over-Cycle Velocity)
+    curr_dcr = float(k2.get('value', 0.0) or 0.0)
+    prev_dcr = float(prev_kpis.get('kpi_2_daily_closure_rate', {}).get('value', 0.0) or 0.0) if prev_kpis else 0.0
+
+    if prev_dcr > 0:
+        dcr_pct_change = ((curr_dcr - prev_dcr) / prev_dcr) * 100.0
+        dcr_display = f"{dcr_pct_change:+.1f}%"
+        dcr_sub_text = f"{curr_dcr:,.2f} tasks/day (vs {prev_dcr:,.2f} in {prev_cycle})"
+        dcr_border_color = "#059669" if dcr_pct_change >= 0 else "#2563EB"
+    else:
+        dcr_pct_change = 0.0
+        dcr_display = f"{curr_dcr:,.1f}/d"
+        dcr_sub_text = f"{curr_dcr:,.2f} tasks/day (Baseline Campaign)"
+        dcr_border_color = "#059669"
+
+    # 2. Discrepancies Closed (Verified State & Tasks Marked Closed Complete)
+    resolved_disc, total_disc = count_resolved_discrepancies(c_disc, c_tasks)
+    disc_closed_pct = round((resolved_disc / max(1, total_disc)) * 100.0) if total_disc > 0 else 100
+
+    # 3. Backlog Reduction (Dynamic Queue Tracking vs Prior Cycle / YoY)
+    k8 = kpis.get('kpi_8_backlog_aging', {})
+    curr_backlog = int(k8.get('value', 0) or 0)
+    prev_k8 = prev_kpis.get('kpi_8_backlog_aging', {}) if prev_kpis else {}
+    prev_backlog = int(prev_k8.get('value', 0) or 0) if prev_kpis else 0
+    yoy_backlog = int(yoy_kpis.get('kpi_8_backlog_aging', {}).get('value', 0) or 0) if yoy_kpis else None
+
+    if curr_backlog == 0:
+        backlog_red_display = "100%"
+        backlog_sub_text = f"0 open tasks (Queue cleared vs {prev_backlog:,} in {prev_cycle})" if prev_cycle else "0 open tasks (Queue cleared)"
+        backlog_border_color = "#10B981"
+    elif yoy_backlog is not None and yoy_backlog > 0:
+        yoy_pct = round(((yoy_backlog - curr_backlog) / yoy_backlog) * 100.0)
+        backlog_red_display = f"{yoy_pct}%"
+        backlog_sub_text = f"YoY Queue Reduction ({curr_backlog:,} vs {yoy_backlog:,} in {yoy_cycle})"
+        backlog_border_color = "#EA580C" if yoy_pct >= 0 else "#EF4444"
+    elif prev_backlog > 0:
+        coc_pct = round(((prev_backlog - curr_backlog) / prev_backlog) * 100.0)
+        backlog_red_display = f"{coc_pct}%"
+        backlog_sub_text = f"Queue Reduction ({curr_backlog:,} vs {prev_backlog:,} in {prev_cycle})"
+        backlog_border_color = "#EA580C" if coc_pct >= 0 else "#EF4444"
+    else:
+        backlog_red_display = f"{curr_backlog:,}"
+        backlog_sub_text = f"Open Backlog Tasks ({selected_cycle} Baseline)"
+        backlog_border_color = "#EA580C"
 
     kc1, kc2, kc3, kc4, kc5 = st.columns(5)
 
@@ -404,10 +492,10 @@ if page == "📊 Executive Overview":
 
     with kc3:
         st.markdown(f'''
-        <div style="background: white; border: 1px solid #E2E8F0; border-top: 4px solid #059669; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+        <div style="background: white; border: 1px solid #E2E8F0; border-top: 4px solid {dcr_border_color}; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
             <div style="color: #64748B; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Daily Closure Rate</div>
-            <div style="color: #0F172A; font-size: 28px; font-weight: 700; line-height: 1.1;">+18%</div>
-            <div style="color: #059669; font-size: 11px; font-weight: 500; margin-top: 4px;">{k2.get('value', 335.5)} tasks/day</div>
+            <div style="color: #0F172A; font-size: 28px; font-weight: 700; line-height: 1.1;">{dcr_display}</div>
+            <div style="color: {dcr_border_color}; font-size: 11px; font-weight: 500; margin-top: 4px;">{dcr_sub_text}</div>
         </div>
         ''', unsafe_allow_html=True)
 
@@ -421,11 +509,11 @@ if page == "📊 Executive Overview":
         ''', unsafe_allow_html=True)
 
     with kc5:
-        st.markdown('''
-        <div style="background: white; border: 1px solid #E2E8F0; border-top: 4px solid #EA580C; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
+        st.markdown(f'''
+        <div style="background: white; border: 1px solid #E2E8F0; border-top: 4px solid {backlog_border_color}; border-radius: 8px; padding: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">
             <div style="color: #64748B; font-size: 13px; font-weight: 600; margin-bottom: 4px;">Backlog Reduction</div>
-            <div style="color: #0F172A; font-size: 28px; font-weight: 700; line-height: 1.1;">22%</div>
-            <div style="color: #EA580C; font-size: 11px; font-weight: 500; margin-top: 4px;">YoY Queue Reduction</div>
+            <div style="color: #0F172A; font-size: 28px; font-weight: 700; line-height: 1.1;">{backlog_red_display}</div>
+            <div style="color: {backlog_border_color}; font-size: 11px; font-weight: 500; margin-top: 4px;">{backlog_sub_text}</div>
         </div>
         ''', unsafe_allow_html=True)
 
@@ -436,44 +524,33 @@ if page == "📊 Executive Overview":
     st.markdown("##### 📋 Slide 1: Executive Summary — Data Certification Comparison")
     st.caption("Cycle-over-cycle performance comparison with Variance (Table: <code>u_failed_data_certifications_list</code> [Field: State] & <code>cert_task</code>).")
 
-    # Resolve previous comparative cycle
-    cycle_order = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
-    if selected_cycle in cycle_order:
-        idx = cycle_order.index(selected_cycle)
-        prev_cycle = cycle_order[idx + 1] if idx + 1 < len(cycle_order) else 'Q4-2025'
-    else:
-        prev_cycle = 'Q2-2026'
-
-    prev_kpis, prev_tasks, prev_disc, prev_meta = get_quarter_kpis(tasks_df, disc_df, prev_cycle)
-
+    # Comparative metrics (using pre-resolved prev_kpis and verified discrepancy state)
     # 1. Total Records Certified
     c_records = int(k1.get('denominator', len(c_tasks)))
-    p_records = int(prev_kpis.get('kpi_1_certification_completion', {}).get('denominator', len(prev_tasks) if prev_tasks is not None else 5000))
+    p_records = int(prev_kpis.get('kpi_1_certification_completion', {}).get('denominator', len(prev_tasks) if prev_tasks is not None else 5000)) if prev_kpis else 0
     diff_records = c_records - p_records
 
     # 2. Completion Rate
     c_comp = float(k1.get('value', 97.0))
-    p_comp = float(prev_kpis.get('kpi_1_certification_completion', {}).get('value', 95.0))
+    p_comp = float(prev_kpis.get('kpi_1_certification_completion', {}).get('value', 95.0)) if prev_kpis else 0.0
     diff_comp = c_comp - p_comp
 
     # 3. SLA Achievement
     c_sla = float(k12.get('value', 95.0)) if k12.get('value') is not None else 95.0
-    p_sla = float(prev_kpis.get('kpi_12_sla_achievement', {}).get('value', 91.0)) if prev_kpis.get('kpi_12_sla_achievement', {}).get('value') is not None else 91.0
+    p_sla = float(prev_kpis.get('kpi_12_sla_achievement', {}).get('value', 91.0)) if prev_kpis and prev_kpis.get('kpi_12_sla_achievement', {}).get('value') is not None else 0.0
     diff_sla = c_sla - p_sla
 
     # 4. Discrepancies Identified
-    c_disc_cnt = len(c_disc) if c_disc is not None else 406
-    p_disc_cnt = len(prev_disc) if prev_disc is not None else 592
+    c_disc_cnt = len(c_disc) if c_disc is not None else 0
+    p_disc_cnt = len(prev_disc) if prev_disc is not None else 0
     diff_disc_cnt = c_disc_cnt - p_disc_cnt
 
-    # 5. Discrepancies Resolved (u_failed_data_certifications_list, Field: State)
-    c_status_col = 'u_status' if 'u_status' in c_disc.columns else ('state' if 'state' in c_disc.columns else None)
-    c_disc_res = int(c_disc[c_status_col].isin(['Resolved', 'Closed', 'resolved']).sum()) if c_status_col else int(c_disc_cnt * 0.89)
-    c_disc_closed_pct = round((c_disc_res / max(1, c_disc_cnt)) * 100.0, 1)
+    # 5. Discrepancies Resolved (u_failed_data_certifications_list, Field: State & cert_task)
+    c_disc_res, c_disc_cnt = count_resolved_discrepancies(c_disc, c_tasks)
+    c_disc_closed_pct = round((c_disc_res / max(1, c_disc_cnt)) * 100.0, 1) if c_disc_cnt > 0 else 100.0
 
-    p_status_col = 'u_status' if prev_disc is not None and 'u_status' in prev_disc.columns else ('state' if prev_disc is not None and 'state' in prev_disc.columns else None)
-    p_disc_res = int(prev_disc[p_status_col].isin(['Resolved', 'Closed', 'resolved']).sum()) if p_status_col and prev_disc is not None else int(p_disc_cnt * 0.82)
-    p_disc_closed_pct = round((p_disc_res / max(1, p_disc_cnt)) * 100.0, 1)
+    p_disc_res, p_disc_cnt = count_resolved_discrepancies(prev_disc, prev_tasks) if (prev_disc is not None and not prev_disc.empty) else (0, 0)
+    p_disc_closed_pct = round((p_disc_res / max(1, p_disc_cnt)) * 100.0, 1) if p_disc_cnt > 0 else (100.0 if prev_cycle else 0.0)
     diff_disc_closed_pct = round(c_disc_closed_pct - p_disc_closed_pct, 1)
 
     # 6. Average Closure Time
@@ -855,12 +932,21 @@ elif page == "⚖️ 2026 & 2025 Quarter Deep Dive":
         comp_df = comp_df.fillna("-")
         for col_name in comp_df.columns:
             comp_df[col_name] = comp_df[col_name].replace({'None': '-', 'None %': '-', 'nan': '-', 'NaN': '-'})
+            if comp_df[col_name].dtype == 'object':
+                comp_df[col_name] = comp_df[col_name].astype(str)
+        
+        # Eliminate any duplicate or redundant change columns before renaming
+        if "Absolute Change" in comp_df.columns and "Variance" in comp_df.columns:
+            comp_df = comp_df.drop(columns=["Absolute Change"])
+        
         comp_df = comp_df.rename(columns={
             "Current Value": f"Autumn Q4-{comp_year}",
             "Previous Value": f"Spring Q2-{comp_year}",
             "Variance": f"Variance (Q4 - Q2)",
             "Absolute Change": f"Variance (Q4 - Q2)"
         })
+        # Defensive de-duplication: guarantee unique column names for PyArrow / Streamlit table
+        comp_df = comp_df.loc[:, ~comp_df.columns.duplicated()]
         st.dataframe(comp_df, use_container_width=True, height=400, hide_index=True)
 
         csv_exp = comp_df.to_csv(index=False).encode('utf-8')
@@ -1202,7 +1288,7 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
 
         status_col = 'u_status' if 'u_status' in enriched_rca_df.columns else ('state' if 'state' in enriched_rca_df.columns else None)
         if status_col:
-            res_mask = enriched_rca_df[status_col].isin(['Resolved', 'Closed', 'resolved'])
+            res_mask = enriched_rca_df[status_col].astype(str).str.strip().str.lower().isin(['resolved', 'closed', 'closed complete', 'complete', '3'])
             res_count = int(res_mask.sum())
             res_rate = (res_count / total_disc * 100.0) if total_disc > 0 else 0.0
         else:
@@ -1443,7 +1529,7 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
             matrix_rows = []
             for scn, grp in filtered_df.groupby('rca_scenario'):
                 c_total = len(grp)
-                c_resolved = int(grp[status_col].isin(['Resolved', 'Closed', 'resolved']).sum()) if status_col else 0
+                c_resolved = int(grp[status_col].astype(str).str.strip().str.lower().isin(['resolved', 'closed', 'closed complete', 'complete', '3']).sum()) if status_col else 0
                 c_open = c_total - c_resolved
                 res_pct = round((c_resolved / c_total * 100.0), 1) if c_total > 0 else 0.0
                 meta = DISCREPANCY_CATEGORIES.get(scn, DISCREPANCY_CATEGORIES.get(scn.replace(" ", "_"), {}))

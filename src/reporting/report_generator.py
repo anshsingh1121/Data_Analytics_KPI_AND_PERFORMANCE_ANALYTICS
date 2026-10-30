@@ -55,7 +55,6 @@ class ReportGenerator:
                 "Previous Value": r.get("previous_value"),
                 "Unit": r.get("unit", ""),
                 "Variance": round(r.get("abs_change", 0), 2) if r.get("abs_change") is not None else None,
-                "Absolute Change": round(r.get("abs_change", 0), 2) if r.get("abs_change") is not None else None,
                 "Percentage Change (%)": round(r.get("pct_change", 0), 2) if r.get("pct_change") is not None else None,
                 "Percentage Points (pp)": round(r.get("pp_change", 0), 2) if r.get("pp_change") is not None else None,
                 "Desired Trend": r.get("desired_trend", ""),
@@ -158,7 +157,7 @@ class ReportGenerator:
         if state_col:
             grouped = disc_df.groupby(cat_col).agg(
                 Total_Discrepancies=(cat_col, 'count'),
-                Resolved_Count=(state_col, lambda s: (s.isin(['Resolved', 'Closed', 'resolved'])).sum())
+                Resolved_Count=(state_col, lambda s: (s.astype(str).str.strip().str.lower().isin(['resolved', 'closed', 'closed complete', 'complete', '3'])).sum())
             ).reset_index()
         else:
             grouped = disc_df.groupby(cat_col).agg(
