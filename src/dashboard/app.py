@@ -1383,7 +1383,7 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                     hover_data={"Domain": True, "Percentage": ":.1f%", "Action": True},
                     labels={"Count": "Discrepancy Records", "rca_scenario": "", "Risk_Level": "Risk Severity"}
                 )
-                chart_height = max(380, min(700, len(summary_df) * 26 + 100))
+                chart_height = max(420, min(700, len(summary_df) * 28 + 120))
                 fig_bar.update_layout(
                     height=chart_height,
                     margin=dict(l=10, r=40, t=20, b=30),
@@ -1409,25 +1409,46 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                     "Architecture & Hosting": "#D97706",
                     "Support & Operations": "#2563EB",
                     "Lifecycle & Release": "#9333EA",
-                    "Application Baseline": "#0D9488"
+                    "Application Baseline": "#0D9488",
+                    "General / Uncategorized": "#64748B"
                 }
+
+                total_domain_count = int(domain_summary['Count'].sum()) if not domain_summary.empty else 0
 
                 fig_donut = px.pie(
                     domain_summary,
                     names="rca_domain",
                     values="Count",
-                    hole=0.52,
+                    hole=0.60,
                     color="rca_domain",
                     color_discrete_map=domain_colors
                 )
+                fig_donut.update_traces(
+                    textinfo="percent",
+                    textposition="inside",
+                    textfont=dict(size=12, family="sans-serif"),
+                    insidetextorientation="horizontal",
+                    hovertemplate="<b>%{label}</b><br>Discrepancies: %{value:,}<br>Domain Share: %{percent}<extra></extra>"
+                )
+                if total_domain_count > 0:
+                    fig_donut.add_annotation(
+                        text=f"<b>{total_domain_count:,}</b><br><span style='font-size:10px;color:#64748B;'>Total</span>",
+                        x=0.5, y=0.5, showarrow=False,
+                        font=dict(size=20, color="#1E293B", family="sans-serif")
+                    )
                 fig_donut.update_layout(
                     height=chart_height,
-                    margin=dict(l=10, r=10, t=20, b=20),
-                    legend=dict(orientation="h", yanchor="bottom", y=-0.15)
-                )
-                fig_donut.update_traces(
-                    textinfo='percent+label',
-                    hovertemplate='<b>%{label}</b><br>Discrepancies: %{value:,}<br>Domain Share: %{percent}'
+                    margin=dict(l=10, r=10, t=20, b=80),
+                    legend=dict(
+                        orientation="h",
+                        yanchor="top",
+                        y=-0.08,
+                        xanchor="center",
+                        x=0.5,
+                        font=dict(size=10)
+                    ),
+                    plot_bgcolor="rgba(0,0,0,0)",
+                    paper_bgcolor="rgba(0,0,0,0)"
                 )
                 st.plotly_chart(fig_donut, use_container_width=True)
 
