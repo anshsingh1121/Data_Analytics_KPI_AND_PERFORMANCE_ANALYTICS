@@ -208,9 +208,12 @@ class TrendAnalyzer:
                 f"{q_name_b} Daily": daily_b,
                 f"{q_name_b} Cumulative": cum_b_last,
                 f"{q_name_b} % Complete": pct_b_last,
+                f"Daily Variance ({q_name_a} - {q_name_b})": delta_daily,
                 f"Daily Delta ({q_name_a} - {q_name_b})": delta_daily,
                 f"Daily Difference (A - B)": delta_daily,
+                f"Cumulative Variance ({q_name_a} - {q_name_b})": delta_cum,
                 f"Cumulative Delta ({q_name_a} - {q_name_b})": delta_cum,
+                f"% Variance ({q_name_a} - {q_name_b})": delta_pct,
                 f"% Delta ({q_name_a} - {q_name_b})": delta_pct,
                 "Pace Leader": pace_leader
             })

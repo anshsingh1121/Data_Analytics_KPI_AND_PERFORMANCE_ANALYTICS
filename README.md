@@ -197,17 +197,34 @@ Historical snapshots are archived in `data/snapshots/` as `.parquet` files index
 
 ---
 
-## 7. Discrepancy Root Cause Analysis (RCA) & Scenarios
+## 7. Discrepancy Reason & Scenario Analytics
 
-The system includes a dedicated NLP keyword-clustering engine that categorizes failed certification tasks and discrepancies into **8 systematic root cause scenarios**:
-1. **Missing / Unassigned Mandatory Data** (`missing`, `empty`, `blank`, `unassigned`, `no owner`)
-2. **Stale / Obsolete / Decommissioning Gaps** (`stale`, `retired`, `decommissioned`, `dormant`, `legacy`)
-3. **Attribute Value Mismatch & Inaccuracy** (`mismatch`, `incorrect`, `differs`, `does not match`)
-4. **Naming & Format Standard Violations** (`format`, `syntax`, `naming convention`, `invalid ip`)
-5. **Orphaned Records & Broken Relationships** (`orphan`, `unlinked`, `no parent`, `broken link`)
-6. **Unauthorized Changes & Configuration Drift** (`unauthorized`, `out of band`, `no change ticket`)
-7. **Duplicate / Redundant Configuration Items** (`duplicate`, `repeated`, `redundant`, `collision`)
-8. **Access, Role & Custodian Governance** (`access`, `permission`, `role vacant`, `certifier unable`)
+The system includes a dedicated NLP and attribute-classification engine that categorizes failed certification tasks and discrepancies across all **23 certified ServiceNow CMDB attributes and governance categories**:
+1. **u_access_reviewer** (Access Reviewer Missing / Unassigned)
+2. **incorrect access reviewer** (Invalid, Departing, or Unauthorized Access Reviewer)
+3. **u_business_delegate** (Business Delegate Continuity)
+4. **u_license_financial_owner** (License & Cost Center Financial Signatory)
+5. **owned_by** (Application / System Executive Owner)
+6. **managed_by** (Delivery & Engineering Manager)
+7. **business_criticality** (Business Impact Tiering & SLA Classification)
+8. **u_customer_money_mover** (Customer Funds Movement SOX Compliance Flag)
+9. **u_change_control** (Change Advisory Board & CAB Governance Profile)
+10. **u_dr_strategy** (Disaster Recovery Architecture & Failover Standard)
+11. **u_hosting_strategy** (Hosting Strategy & Cloud Infrastructure Fabric)
+12. **u_hardware_platform** (Underlying Compute Platform Architecture)
+13. **support_group** (L2 / L3 Operational Support Routing Queue)
+14. **assignment_group** (Primary Incident & Task Assignment Queue)
+15. **install_status** (Operational Lifecycle State vs CMDB Verification)
+16. **u_end_of_life_date** (Vendor & Internal Software Sunset / EOL Date)
+17. **u_version** (Deployed Software Release Version Baseline)
+18. **application_type** (Application Archetype: COTS, Custom, SaaS, Hybrid)
+19. **u_asl_type** (Application Service Level Agreement Tier)
+20. **u_user_interface** (Presentation Layer Architecture)
+21. **u_source_code_location** (Authoritative Version Control Git Repository URL)
+22. **manufacturer** (Third-Party Software Vendor Master Reconciliation)
+23. **short_description** (Application Summary & Purpose Documentation)
+
+Organized into 6 core governance domains: *Ownership & Custodianship*, *Risk, Governance & Compliance*, *Architecture & Hosting*, *Support & Operations*, *Lifecycle & Release*, and *Application Baseline*.
 
 > 📖 **Full Logic Guide**: For detailed step-by-step logic, trigger keywords, and dashboard visuals, see **[Discrepancy RCA Logic Guide](docs/discrepancy_rca_logic.md)**.
 

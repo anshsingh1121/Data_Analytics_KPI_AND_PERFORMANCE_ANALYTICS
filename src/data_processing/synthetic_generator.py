@@ -155,59 +155,210 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
             # Discrepancy generation linked by task_id
             if random.random() < disc_rate:
                 disc_id = str(uuid.uuid4())
-                issue_category = random.choice([
-                    'Missing Data', 'Invalid Format', 'Stale Reference', 
-                    'Inconsistent Value', 'Unauthorized Change', 'Duplicate Entry',
-                    'Orphan Record', 'Access Issue'
-                ])
-                field_name = random.choice(['owner', 'cost_center', 'department', 'manager', 'location', 'classification'])
                 
-                desc_templates = {
-                    'Missing Data': [
-                        f"Required field '{field_name}' is blank or unassigned in CMDB record.",
-                        f"Missing mandatory value: No valid {field_name} specified during data certification check.",
-                        f"Primary {field_name} is empty or null for CI {app}.",
-                        f"Unassigned custodian: {field_name} not populated in application catalog."
-                    ],
-                    'Stale Reference': [
-                        f"Stale record: Asset marked operational but {field_name} indicates decommissioned status.",
-                        f"Obsolete configuration: CI has no discovery updates for >90 days, legacy status detected.",
-                        f"Dormant CI: System was retired physically but active record remains in {field_name} audit.",
-                        f"Decommissioning gap: Equipment sunset or shut down but remains active in CMDB."
-                    ],
-                    'Inconsistent Value': [
-                        f"Value mismatch: {field_name} differs from authoritative SAP / HR system of record.",
-                        f"Attribute discrepancy: Current {field_name} value does not match physical inventory audit.",
-                        f"Inconsistent data: Conflicting {field_name} detected between discovery and CMDB.",
-                        f"Incorrect value: {field_name} deviates from approved enterprise baseline."
-                    ],
-                    'Invalid Format': [
-                        f"Naming standard violation: {field_name} does not conform to enterprise regex convention.",
-                        f"Syntax error: Invalid characters or malformed pattern detected in {field_name}.",
-                        f"Format non-compliance: {field_name} violates corporate CMDB naming rules."
-                    ],
-                    'Orphan Record': [
-                        f"Orphan CI: No parent business service or upstream relationship mapped in CMDB.",
-                        f"Unlinked dependency: CI has missing relationship and broken link to application tier.",
-                        f"Isolated asset: No relation found linking {app} to production infrastructure cluster."
-                    ],
-                    'Unauthorized Change': [
-                        f"Unauthorized change detected on {field_name} without an approved Change Request RFC.",
-                        f"Out of band drift: Configuration modified without change management authorization.",
-                        f"Untracked modification: Unexpected change detected in {field_name} during audit."
-                    ],
-                    'Duplicate Entry': [
-                        f"Duplicate CI: Multiple active entries found with the same {field_name} and serial identifier.",
-                        f"Redundant record: Duplicate entry collision detected against master CI register."
-                    ],
-                    'Access Issue': [
-                        f"Certifier unable to verify: Assigned custodian role is vacant or permission revoked.",
-                        f"Access issue: Custodian left company or inactive user assigned as certifier."
-                    ]
-                }
+                # The 22 Certified ServiceNow CMDB Audited Fields
+                certified_fields = [
+                    'u_access_reviewer', 'u_business_delegate', 'u_license_financial_owner',
+                    'owned_by', 'managed_by', 'business_criticality', 'u_customer_money_mover',
+                    'u_change_control', 'u_dr_strategy', 'u_hosting_strategy', 'support_group',
+                    'assignment_group', 'install_status', 'u_end_of_life_date', 'u_version',
+                    'application_type', 'u_asl_type', 'u_hardware_platform',
+                    'u_source_code_location', 'u_user_interface', 'manufacturer', 'short_description'
+                ]
                 
-                chosen_desc = random.choice(desc_templates.get(issue_category, [f"Discrepancy detected in {field_name}"]))
-                short_desc = f"{issue_category}: {field_name} discrepancy on {app}"
+                field_name = random.choice(certified_fields)
+                
+                if field_name == 'u_access_reviewer' and random.random() < 0.45:
+                    issue_category = 'incorrect access reviewer'
+                    chosen_desc = random.choice([
+                        f"Discrepancy: incorrect access reviewer assigned for {app}; certifier is not authorized access reviewer.",
+                        f"Incorrect access reviewer: Custodian left company or has inactive profile in Active Directory.",
+                        f"Invalid access reviewer: Assigned reviewer role is vacant or unauthorized for access sign-off.",
+                        f"Incorrect access reviewer: Custodian mismatch between IAM directory and CMDB application record."
+                    ])
+                    short_desc = f"incorrect access reviewer: {app} reviewer invalid or departed"
+                elif field_name == 'u_access_reviewer':
+                    issue_category = 'u_access_reviewer'
+                    chosen_desc = random.choice([
+                        f"Required field 'u_access_reviewer' is blank or unassigned in CMDB record.",
+                        f"Missing access reviewer: No designated access reviewer specified during data certification check.",
+                        f"Primary u_access_reviewer is empty or null for CI {app}.",
+                        f"Unassigned custodian: u_access_reviewer not populated in application catalog."
+                    ])
+                    short_desc = f"u_access_reviewer: access reviewer missing on {app}"
+                elif field_name == 'business_criticality':
+                    issue_category = 'business_criticality'
+                    chosen_desc = random.choice([
+                        f"Criticality mismatch: business_criticality in CMDB differs from Business Impact Analysis (BIA) tier.",
+                        f"Missing mandatory business_criticality tiering classification for CI {app}.",
+                        f"Incorrect business_criticality: Marked Tier 3 but application handles core customer transactions.",
+                        f"business_criticality discrepancy: Tier rating out of sync with enterprise architecture baseline."
+                    ])
+                    short_desc = f"business_criticality: tier rating discrepancy on {app}"
+                elif field_name == 'u_customer_money_mover':
+                    issue_category = 'u_customer_money_mover'
+                    chosen_desc = random.choice([
+                        f"Urgent SOX compliance gap: u_customer_money_mover flag uncertified or inconsistent with payment gateway audit.",
+                        f"Missing value: u_customer_money_mover attribute is empty; requires financial transaction classification.",
+                        f"u_customer_money_mover discrepancy: Application moves customer funds but flag is set to false.",
+                        f"Customer funds movement audit: u_customer_money_mover requires compliance re-attestation."
+                    ])
+                    short_desc = f"u_customer_money_mover: funds movement audit gap on {app}"
+                elif field_name == 'owned_by':
+                    issue_category = 'owned_by'
+                    chosen_desc = random.choice([
+                        f"Application owner gap: owned_by attribute is blank or assigned to inactive personnel.",
+                        f"owned_by discrepancy: Executive ownership not re-certified during annual campaign.",
+                        f"Vacant owner: owned_by user has transitioned to a different division.",
+                        f"Unassigned application custodian: owned_by is null for CI {app}."
+                    ])
+                    short_desc = f"owned_by: application owner missing or vacant on {app}"
+                elif field_name == 'managed_by':
+                    issue_category = 'managed_by'
+                    chosen_desc = random.choice([
+                        f"Technical manager discrepancy: managed_by engineering delivery lead not populated.",
+                        f"managed_by vacant: Previous application manager reassigned to another business unit.",
+                        f"Delivery leadership gap: managed_by requires active technical lead assignment.",
+                        f"Inconsistent manager: managed_by record does not match IT organizational hierarchy."
+                    ])
+                    short_desc = f"managed_by: delivery manager unassigned on {app}"
+                elif field_name == 'u_business_delegate':
+                    issue_category = 'u_business_delegate'
+                    chosen_desc = random.choice([
+                        f"Business delegate missing: u_business_delegate is empty; alternate sign-off contact required.",
+                        f"u_business_delegate discrepancy: Assigned business delegate has departed enterprise.",
+                        f"Continuity risk: No secondary u_business_delegate configured for certification workflows."
+                    ])
+                    short_desc = f"u_business_delegate: delegate unassigned on {app}"
+                elif field_name == 'u_license_financial_owner':
+                    issue_category = 'u_license_financial_owner'
+                    chosen_desc = random.choice([
+                        f"License financial owner gap: u_license_financial_owner cost center budget owner not identified.",
+                        f"u_license_financial_owner discrepancy: Financial cost center mismatch against SAP GL account.",
+                        f"Budget owner vacant: u_license_financial_owner requires active corporate finance signatory."
+                    ])
+                    short_desc = f"u_license_financial_owner: financial owner gap on {app}"
+                elif field_name == 'u_change_control':
+                    issue_category = 'u_change_control'
+                    chosen_desc = random.choice([
+                        f"Change control governance discrepancy: u_change_control is unassigned; CAB review required.",
+                        f"u_change_control violation: Application modified without approved change advisory process.",
+                        f"Emergency change profile missing: u_change_control setting does not conform to enterprise policy."
+                    ])
+                    short_desc = f"u_change_control: change control governance gap on {app}"
+                elif field_name == 'u_dr_strategy':
+                    issue_category = 'u_dr_strategy'
+                    chosen_desc = random.choice([
+                        f"DR strategy discrepancy: u_dr_strategy specifies active-active but secondary site is decommissioned.",
+                        f"Missing disaster recovery configuration: u_dr_strategy is unassigned in application catalog.",
+                        f"u_dr_strategy gap: Recovery Time Objective (RTO) exceeds approved tier standard.",
+                        f"Disaster recovery drift: u_dr_strategy out of sync with annual technical failover test drill."
+                    ])
+                    short_desc = f"u_dr_strategy: disaster recovery strategy gap on {app}"
+                elif field_name == 'u_hosting_strategy':
+                    issue_category = 'u_hosting_strategy'
+                    chosen_desc = random.choice([
+                        f"Hosting strategy mismatch: u_hosting_strategy indicates on-prem but workloads migrated to AWS.",
+                        f"Missing hosting metadata: u_hosting_strategy unpopulated for cloud hybrid CI {app}.",
+                        f"u_hosting_strategy discrepancy: Cloud provider hosting region differs from CMDB profile."
+                    ])
+                    short_desc = f"u_hosting_strategy: hosting strategy discrepancy on {app}"
+                elif field_name == 'u_hardware_platform':
+                    issue_category = 'u_hardware_platform'
+                    chosen_desc = random.choice([
+                        f"Hardware platform discrepancy: u_hardware_platform specifies legacy x86 architecture.",
+                        f"Missing compute architecture: u_hardware_platform is null in server specification record.",
+                        f"u_hardware_platform drift: Underlying hypervisor platform differs from cluster baseline."
+                    ])
+                    short_desc = f"u_hardware_platform: hardware platform gap on {app}"
+                elif field_name == 'support_group':
+                    issue_category = 'support_group'
+                    chosen_desc = random.choice([
+                        f"Support routing discrepancy: support_group points to disbanded L2 operations queue.",
+                        f"Missing support group: support_group is empty; incident dispatch cannot be routed.",
+                        f"support_group invalid: Assigned tier 2 support team has been merged into Global Operations."
+                    ])
+                    short_desc = f"support_group: operational support queue gap on {app}"
+                elif field_name == 'assignment_group':
+                    issue_category = 'assignment_group'
+                    chosen_desc = random.choice([
+                        f"Assignment group error: assignment_group not configured for primary incident routing.",
+                        f"Inactive resolver: assignment_group queue is inactive or archived in ServiceNow ITSM.",
+                        f"assignment_group discrepancy: Task assignment group differs from certified support model."
+                    ])
+                    short_desc = f"assignment_group: assignment group invalid on {app}"
+                elif field_name == 'install_status':
+                    issue_category = 'install_status'
+                    chosen_desc = random.choice([
+                        f"Install status gap: install_status marked operational but CI has been sunset / decommissioned.",
+                        f"Stale lifecycle state: install_status shows installed but system has been shut down >90 days.",
+                        f"install_status discrepancy: Operational state out of sync with discovery probe sensors."
+                    ])
+                    short_desc = f"install_status: lifecycle install status mismatch on {app}"
+                elif field_name == 'u_end_of_life_date':
+                    issue_category = 'u_end_of_life_date'
+                    chosen_desc = random.choice([
+                        f"End of life date discrepancy: u_end_of_life_date is past due but no retirement roadmap recorded.",
+                        f"Missing sunset roadmap: u_end_of_life_date is unassigned for legacy vendor software.",
+                        f"u_end_of_life_date audit: Commercial software version reached vendor end-of-support."
+                    ])
+                    short_desc = f"u_end_of_life_date: end of life date gap on {app}"
+                elif field_name == 'u_version':
+                    issue_category = 'u_version'
+                    chosen_desc = random.choice([
+                        f"Software version mismatch: u_version in CMDB differs from discovery build tag.",
+                        f"Outdated release tag: u_version is empty or indicates unpatched legacy build.",
+                        f"u_version discrepancy: Production deployed version deviates from certified release register."
+                    ])
+                    short_desc = f"u_version: software release version mismatch on {app}"
+                elif field_name == 'application_type':
+                    issue_category = 'application_type'
+                    chosen_desc = random.choice([
+                        f"Application type classification error: application_type marked COTS instead of in-house custom app.",
+                        f"Missing archetype: application_type is unpopulated in application catalog register.",
+                        f"application_type discrepancy: SaaS delivery model differs from configured package type."
+                    ])
+                    short_desc = f"application_type: archetype classification gap on {app}"
+                elif field_name == 'u_asl_type':
+                    issue_category = 'u_asl_type'
+                    chosen_desc = random.choice([
+                        f"ASL tier discrepancy: u_asl_type service level agreement not aligned with EA tiering.",
+                        f"Missing service level: u_asl_type is blank for enterprise application {app}.",
+                        f"u_asl_type mismatch: Service availability tier differs from business SLA agreement."
+                    ])
+                    short_desc = f"u_asl_type: application service level tier gap on {app}"
+                elif field_name == 'u_user_interface':
+                    issue_category = 'u_user_interface'
+                    chosen_desc = random.choice([
+                        f"User interface architecture gap: u_user_interface metadata missing from application catalog.",
+                        f"u_user_interface discrepancy: Application marked Web UI but operates exclusively via REST API.",
+                        f"Presentation tier drift: u_user_interface specification requires architecture update."
+                    ])
+                    short_desc = f"u_user_interface: UI architecture specification gap on {app}"
+                elif field_name == 'u_source_code_location':
+                    issue_category = 'u_source_code_location'
+                    chosen_desc = random.choice([
+                        f"Source code location gap: u_source_code_location Git repository link is invalid or empty.",
+                        f"Repository URL broken: u_source_code_location points to decommissioned Bitbucket server.",
+                        f"u_source_code_location audit: GitHub repository link required for automated security scans."
+                    ])
+                    short_desc = f"u_source_code_location: Git repository link missing on {app}"
+                elif field_name == 'manufacturer':
+                    issue_category = 'manufacturer'
+                    chosen_desc = random.choice([
+                        f"Vendor reconciliation gap: manufacturer does not match approved enterprise vendor master.",
+                        f"Missing OEM vendor: manufacturer is blank for third-party commercial package {app}.",
+                        f"manufacturer discrepancy: Software publisher name non-compliant with standard naming convention."
+                    ])
+                    short_desc = f"manufacturer: vendor master mismatch on {app}"
+                else:  # short_description
+                    issue_category = 'short_description'
+                    chosen_desc = random.choice([
+                        f"Missing summary description: short_description is blank or non-compliant with CMDB standards.",
+                        f"short_description discrepancy: Summary text does not articulate business function for {app}.",
+                        f"Catalog hygiene gap: short_description requires concise functional scope description."
+                    ])
+                    short_desc = f"short_description: application summary description missing on {app}"
 
                 is_resolved = (random.random() < 0.88)
                 created_disc = created_on + timedelta(days=random.randint(1, 3))
@@ -220,6 +371,7 @@ def generate_synthetic_data(output_dir: str = 'data/synthetic'):
                     'sys_id': disc_id,
                     'number': f"DISC{20260000 + len(discrepancies_data) + 1}",
                     'u_certification_task': task_id,
+                    'assigned_to': certifier,
                     'u_application': app,
                     'u_field': field_name,
                     'u_cmdb_ci': app,

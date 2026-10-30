@@ -244,6 +244,7 @@ def test_compare_quarter_daily_trends():
     assert 'Working Day' in comp_df.columns
     assert 'Q4-2026 Daily' in comp_df.columns
     assert 'Q4-2025 Daily' in comp_df.columns
+    assert 'Daily Variance (Q4-2026 - Q4-2025)' in comp_df.columns
     assert 'Daily Delta (Q4-2026 - Q4-2025)' in comp_df.columns
     assert 'Cumulative Delta (Q4-2026 - Q4-2025)' in comp_df.columns
     assert 'Pace Leader' in comp_df.columns

@@ -307,8 +307,8 @@ def cmd_pipeline(args):
     try:
         # Step 1: Data Extraction / Ingestion
         if mode == "demo":
-            tasks_path = 'data/processed/cert_tasks_processed.csv' if os.path.exists('data/processed/cert_tasks_processed.csv') else 'data/synthetic/cert_tasks.csv'
-            disc_path = 'data/processed/discrepancies_processed.csv' if os.path.exists('data/processed/discrepancies_processed.csv') else 'data/synthetic/discrepancies.csv'
+            tasks_path = 'data/synthetic/cert_tasks.csv' if os.path.exists('data/synthetic/cert_tasks.csv') else 'data/processed/cert_tasks_processed.csv'
+            disc_path = 'data/synthetic/discrepancies.csv' if os.path.exists('data/synthetic/discrepancies.csv') else 'data/processed/discrepancies_processed.csv'
             if not os.path.exists(tasks_path):
                 logger.error("No input certification data found in data/processed/ or data/synthetic/.")
                 run_hist.end_run(run_id, "FAILED", errors="Missing input data")
@@ -596,7 +596,7 @@ def cmd_pipeline(args):
                     "Unit": k_unit,
                     f"Spring {q2_k} ({q2_lbl})": f"{v2}{k_unit}" if v2 is not None else "N/A",
                     f"Autumn {q4_k} ({q4_lbl})": f"{v4}{k_unit}" if v4 is not None else "N/A",
-                    f"Change (Autumn vs Spring)": f"{diff:+}{k_unit}" if diff is not None else "N/A"
+                    f"Variance (Autumn vs Spring)": f"{diff:+}{k_unit}" if diff is not None else "N/A"
                 })
             return pd.DataFrame(rows)
 
@@ -615,9 +615,9 @@ def cmd_pipeline(args):
             val_26 = quarterly_results['Q4-2026']['kpis'].get(k_key, {}).get('value')
             val_25 = quarterly_results['Q4-2025']['kpis'].get(k_key, {}).get('value')
             if val_26 is not None and val_25 is not None and not pd.isna(val_26) and not pd.isna(val_25):
-                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = round(val_26 - val_25, 2)
+                row_dict['YoY Variance (Q4-26 vs Q4-25)'] = round(val_26 - val_25, 2)
             else:
-                row_dict['YoY Diff (Q4-26 vs Q4-25)'] = "-"
+                row_dict['YoY Variance (Q4-26 vs Q4-25)'] = "-"
             multi_q_rows.append(row_dict)
 
         multi_q_df = pd.DataFrame(multi_q_rows)

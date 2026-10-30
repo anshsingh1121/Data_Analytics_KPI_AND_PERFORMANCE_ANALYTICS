@@ -46,7 +46,7 @@ class ReportGenerator:
     def build_cycle_comparison_df(self, comparison_rows: List[Dict[str, Any]]) -> pd.DataFrame:
         """Builds DataFrame of current vs previous cycle comparison."""
         if not comparison_rows:
-            return pd.DataFrame(columns=["Metric", "Current Value", "Previous Value", "Abs Change", "Pct Change", "PP Change", "Favorable"])
+            return pd.DataFrame(columns=["Metric", "Current Value", "Previous Value", "Variance", "Pct Change", "PP Change", "Favorable"])
         rows = []
         for r in comparison_rows:
             rows.append({
@@ -54,6 +54,7 @@ class ReportGenerator:
                 "Current Value": r.get("current_value"),
                 "Previous Value": r.get("previous_value"),
                 "Unit": r.get("unit", ""),
+                "Variance": round(r.get("abs_change", 0), 2) if r.get("abs_change") is not None else None,
                 "Absolute Change": round(r.get("abs_change", 0), 2) if r.get("abs_change") is not None else None,
                 "Percentage Change (%)": round(r.get("pct_change", 0), 2) if r.get("pct_change") is not None else None,
                 "Percentage Points (pp)": round(r.get("pp_change", 0), 2) if r.get("pp_change") is not None else None,
