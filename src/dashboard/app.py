@@ -1707,10 +1707,26 @@ elif page == "👥 Team Performance Analytics":
                     color_continuous_scale="Reds",
                     labels={"Average turnaround time": "Avg Turnaround (Days)", "Team Member": "Assignee"}
                 )
-                fig_slow.add_vline(x=5.0, line_dash="dash", line_color="#DC2626", annotation_text="SLA Target: 5.0d")
+                fig_slow.add_vline(x=5.0, line_dash="dash", line_color="#DC2626")
+                fig_slow.add_annotation(
+                    x=5.0,
+                    y=1.04,
+                    yref="paper",
+                    text="<b>SLA Target: 5.0d</b>",
+                    showarrow=False,
+                    xanchor="left",
+                    yanchor="bottom",
+                    font=dict(color="#DC2626", size=11, family="sans-serif"),
+                    bgcolor="rgba(255, 255, 255, 0.95)",
+                    bordercolor="#DC2626",
+                    borderwidth=1,
+                    borderpad=3
+                )
+                max_slow_val = float(slowest_df['Average turnaround time'].max()) if not slowest_df.empty else 10.0
+                fig_slow.update_xaxes(range=[0, max(max_slow_val * 1.18, 6.0)])
                 fig_slow.update_layout(
                     height=380,
-                    margin=dict(l=10, r=40, t=20, b=30),
+                    margin=dict(l=10, r=50, t=40, b=30),
                     yaxis=dict(autorange="reversed"),
                     coloraxis_showscale=False,
                     plot_bgcolor="rgba(0,0,0,0)",
@@ -1734,7 +1750,7 @@ elif page == "👥 Team Performance Analytics":
                 )
                 fig_workload.update_layout(
                     height=380,
-                    margin=dict(l=10, r=30, t=20, b=30),
+                    margin=dict(l=10, r=30, t=40, b=30),
                     yaxis=dict(autorange="reversed"),
                     coloraxis_showscale=False,
                     plot_bgcolor="rgba(0,0,0,0)",
@@ -1745,6 +1761,50 @@ elif page == "👥 Team Performance Analytics":
 
             # ROW 2: SLA vs Turnaround Scatter Plot
             st.markdown("##### 🎯 SLA Compliance (%) vs. Average Turnaround Time")
+
+            # Intelligent collision-free label positioning across close proximity points
+            def _calculate_scatter_label_positions(df, x_col="Average turnaround time", y_col="SLA compliance"):
+                if df is None or df.empty:
+                    return "top center"
+                x_vals = df[x_col].values
+                y_vals = df[y_col].values
+                n = len(df)
+                if n <= 1:
+                    return ["top center"] * n
+                x_span = max(1.0, float(np.ptp(x_vals)))
+                y_span = max(1.0, float(np.ptp(y_vals)))
+                positions = []
+                for i in range(n):
+                    xi, yi = x_vals[i], y_vals[i]
+                    close_indices = []
+                    for j in range(n):
+                        if i != j:
+                            dx = abs(xi - x_vals[j]) / x_span
+                            dy = abs(yi - y_vals[j]) / max(1.0, y_span)
+                            if dx < 0.16 and dy < 0.22:
+                                close_indices.append(j)
+                    if not close_indices:
+                        positions.append("bottom center" if yi >= 90 else "top center")
+                    else:
+                        cluster = sorted([i] + close_indices, key=lambda idx: x_vals[idx])
+                        rank = cluster.index(i)
+                        c_size = len(cluster)
+                        if c_size == 2:
+                            positions.append(("top left" if yi < 85 else "bottom left") if rank == 0 else ("top right" if yi < 85 else "bottom right"))
+                        elif c_size == 3:
+                            if rank == 0:
+                                positions.append("top left" if yi < 85 else "bottom left")
+                            elif rank == 1:
+                                positions.append("top center" if yi < 50 else "bottom center")
+                            else:
+                                positions.append("top right" if yi < 85 else "bottom right")
+                        else:
+                            alt = ["top left", "top right", "bottom left", "bottom right"]
+                            positions.append(alt[rank % len(alt)])
+                return positions
+
+            scatter_label_positions = _calculate_scatter_label_positions(team_stats_df)
+
             fig_sla = px.scatter(
                 team_stats_df,
                 x="Average turnaround time",
@@ -1760,12 +1820,32 @@ elif page == "👥 Team Performance Analytics":
                 },
                 color_continuous_scale="Viridis"
             )
-            fig_sla.add_hline(y=95.0, line_dash="dash", line_color="#10B981", annotation_text="Target: 95% SLA")
-            fig_sla.add_vline(x=5.0, line_dash="dash", line_color="#DC2626", annotation_text="Max Standard: 5.0 Days")
-            fig_sla.update_traces(textposition='top center')
+            fig_sla.add_hline(
+                y=95.0,
+                line_dash="dash",
+                line_color="#10B981",
+                annotation_text="Target: 95% SLA",
+                annotation_position="top right",
+                annotation=dict(bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#10B981", borderwidth=1, borderpad=2, font=dict(color="#065F46", size=10))
+            )
+            fig_sla.add_vline(
+                x=5.0,
+                line_dash="dash",
+                line_color="#DC2626",
+                annotation_text="Max Standard: 5.0 Days",
+                annotation_position="top right",
+                annotation=dict(bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#DC2626", borderwidth=1, borderpad=2, font=dict(color="#DC2626", size=10))
+            )
+            fig_sla.update_traces(
+                textposition=scatter_label_positions,
+                textfont=dict(size=11, family="sans-serif", color="#1E293B")
+            )
+            max_all_turnaround = float(team_stats_df['Average turnaround time'].max()) if not team_stats_df.empty else 10.0
+            fig_sla.update_xaxes(range=[0, max(max_all_turnaround * 1.15, 14.0)])
+            fig_sla.update_yaxes(range=[-10, 110])
             fig_sla.update_layout(
                 height=380,
-                margin=dict(l=10, r=20, t=20, b=30),
+                margin=dict(l=10, r=30, t=30, b=30),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)"
             )
