@@ -1359,7 +1359,7 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
             st.info("No discrepancy records match your filter criteria. Try adjusting the search keyword or category filters.")
         else:
             # ROW 1: Discrepancy Breakdown by Audited Category & Severity + Domain Distribution Donut
-            r1_col1, r1_col2 = st.columns([3, 2])
+            r1_col1, r1_col2 = st.columns([3.2, 1.8])
 
             with r1_col1:
                 st.markdown("##### 📊 Discrepancy Volume by Audited Category & Severity")
@@ -1383,11 +1383,18 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                     hover_data={"Domain": True, "Percentage": ":.1f%", "Action": True},
                     labels={"Count": "Discrepancy Records", "rca_scenario": "", "Risk_Level": "Risk Severity"}
                 )
-                chart_height = max(420, min(700, len(summary_df) * 28 + 120))
+                chart_height = max(420, min(800, len(summary_df) * 32 + 100))
+                max_count = int(summary_df['Count'].max()) if not summary_df.empty else 10
+                # Expand x-axis range by 30% to guarantee outside text labels (e.g. '167 (69.9%)') are never trimmed
+                fig_bar.update_xaxes(
+                    range=[0, max_count * 1.30],
+                    automargin=True
+                )
                 fig_bar.update_layout(
                     height=chart_height,
-                    margin=dict(l=10, r=40, t=20, b=30),
-                    yaxis=dict(autorange="reversed"),
+                    margin=dict(l=15, r=85, t=25, b=30),
+                    yaxis=dict(autorange="reversed", automargin=True),
+                    bargap=0.22,
                     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)"
@@ -1395,6 +1402,7 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                 fig_bar.update_traces(
                     texttemplate='%{text} (%{customdata[1]:.1f}%)',
                     textposition='outside',
+                    textfont=dict(size=11, family="sans-serif", color="#1E293B"),
                     cliponaxis=False
                 )
                 st.plotly_chart(fig_bar, use_container_width=True)
@@ -1438,14 +1446,14 @@ elif page == "🔍 Discrepancy Reason & Scenario Analytics":
                     )
                 fig_donut.update_layout(
                     height=chart_height,
-                    margin=dict(l=10, r=10, t=20, b=80),
+                    margin=dict(l=10, r=10, t=20, b=70),
                     legend=dict(
                         orientation="h",
                         yanchor="top",
-                        y=-0.08,
+                        y=-0.06,
                         xanchor="center",
                         x=0.5,
-                        font=dict(size=10)
+                        font=dict(size=9.5)
                     ),
                     plot_bgcolor="rgba(0,0,0,0)",
                     paper_bgcolor="rgba(0,0,0,0)"
@@ -1752,47 +1760,107 @@ elif page == "👥 Team Performance Analytics":
             st.markdown("##### 🎯 SLA Compliance (%) vs. Average Turnaround Time")
 
             # Intelligent collision-free label positioning across close proximity points
-            def _calculate_scatter_label_positions(df, x_col="Average turnaround time", y_col="SLA compliance"):
+            def _compute_scatter_annotations(df, x_col="Average turnaround time", y_col="SLA compliance", name_col="Team Member", max_annotations=16):
                 if df is None or df.empty:
-                    return "top center"
-                x_vals = df[x_col].values
-                y_vals = df[y_col].values
-                n = len(df)
-                if n <= 1:
-                    return ["top center"] * n
-                x_span = max(1.0, float(np.ptp(x_vals)))
-                y_span = max(1.0, float(np.ptp(y_vals)))
-                positions = []
-                for i in range(n):
-                    xi, yi = x_vals[i], y_vals[i]
-                    close_indices = []
-                    for j in range(n):
-                        if i != j:
-                            dx = abs(xi - x_vals[j]) / x_span
-                            dy = abs(yi - y_vals[j]) / max(1.0, y_span)
-                            if dx < 0.16 and dy < 0.22:
-                                close_indices.append(j)
-                    if not close_indices:
-                        positions.append("bottom center" if yi >= 90 else "top center")
-                    else:
-                        cluster = sorted([i] + close_indices, key=lambda idx: x_vals[idx])
-                        rank = cluster.index(i)
-                        c_size = len(cluster)
-                        if c_size == 2:
-                            positions.append(("top left" if yi < 85 else "bottom left") if rank == 0 else ("top right" if yi < 85 else "bottom right"))
-                        elif c_size == 3:
-                            if rank == 0:
-                                positions.append("top left" if yi < 85 else "bottom left")
-                            elif rank == 1:
-                                positions.append("top center" if yi < 50 else "bottom center")
-                            else:
-                                positions.append("top right" if yi < 85 else "bottom right")
+                    return []
+                
+                working_df = df.copy()
+                if len(working_df) > max_annotations:
+                    # Select most critical assignees (slowest turnaround, lowest SLA, highest workload)
+                    p1 = working_df.nlargest(6, x_col)
+                    p2 = working_df.nsmallest(5, y_col)
+                    combined_idx = list(set(p1.index.tolist() + p2.index.tolist()))
+                    if len(combined_idx) < max_annotations:
+                        remaining = working_df.drop(combined_idx)
+                        if 'Tasks assigned' in remaining.columns:
+                            p3 = remaining.nlargest(max_annotations - len(combined_idx), 'Tasks assigned')
+                            combined_idx.extend(p3.index.tolist())
                         else:
-                            alt = ["top left", "top right", "bottom left", "bottom right"]
-                            positions.append(alt[rank % len(alt)])
-                return positions
+                            combined_idx.extend(remaining.head(max_annotations - len(combined_idx)).index.tolist())
+                    working_df = working_df.loc[combined_idx].copy()
+                    
+                sorted_df = working_df.sort_values(by=[x_col, y_col]).reset_index(drop=True)
+                n = len(sorted_df)
+                max_x = sorted_df[x_col].max() if n > 0 else 10.0
+                plot_max_x = max(max_x * 1.18, 14.0)
+                
+                def format_name(name):
+                    parts = str(name).strip().split()
+                    if len(parts) >= 2 and len(name) > 12:
+                        mid = len(parts) // 2
+                        return ' '.join(parts[:mid]) + '<br>' + ' '.join(parts[mid:])
+                    return str(name)
+                    
+                annotations = []
+                placed = []
+                
+                for idx, row in sorted_df.iterrows():
+                    xi = float(row[x_col])
+                    yi = float(row[y_col])
+                    name = format_name(row[name_col])
+                    
+                    used_tiers = set()
+                    for px, py, pay, pax in placed:
+                        # Check collision if x is within 0.85 days and on same vertical side
+                        if abs(xi - px) < 0.85 and ((yi < 70 and py < 70) or (yi >= 70 and py >= 70)):
+                            used_tiers.add(pay)
+                            
+                    if yi >= 70:
+                        candidate_ays = [28, 64, 100]
+                    else:
+                        candidate_ays = [-28, -64, -100, -136, -172]
+                        
+                    chosen_ay = candidate_ays[0]
+                    for cay in candidate_ays:
+                        if cay not in used_tiers:
+                            chosen_ay = cay
+                            break
+                    else:
+                        chosen_ay = candidate_ays[-1]
+                        
+                    # Boundary protection to prevent clipping / trimming
+                    if xi < 1.0:
+                        ax = 14
+                        xanchor = 'left'
+                    elif xi > plot_max_x - 1.8:
+                        ax = -14
+                        xanchor = 'right'
+                    else:
+                        same_x = [p for p in placed if abs(xi - p[0]) < 0.35 and p[2] == chosen_ay]
+                        if len(same_x) == 1:
+                            ax = 14
+                            xanchor = 'left'
+                        elif len(same_x) >= 2:
+                            ax = -14
+                            xanchor = 'right'
+                        else:
+                            ax = 0
+                            xanchor = 'center'
+                            
+                    placed.append((xi, yi, chosen_ay, ax))
+                    
+                    annotations.append(dict(
+                        x=xi,
+                        y=yi,
+                        text=f"<b>{name}</b>",
+                        showarrow=True,
+                        arrowhead=0,
+                        arrowsize=0.5,
+                        arrowwidth=1,
+                        arrowcolor="rgba(100, 116, 139, 0.45)",
+                        ax=ax,
+                        ay=chosen_ay,
+                        xanchor=xanchor,
+                        bgcolor="rgba(255, 255, 255, 0.94)",
+                        bordercolor="#CBD5E1",
+                        borderwidth=1,
+                        borderpad=3,
+                        font=dict(size=9.5, color="#0F172A", family="sans-serif")
+                    ))
+                    
+                return annotations
 
-            scatter_label_positions = _calculate_scatter_label_positions(team_stats_df)
+            scatter_annotations = _compute_scatter_annotations(team_stats_df)
 
             fig_sla = px.scatter(
                 team_stats_df,
@@ -1801,7 +1869,6 @@ elif page == "👥 Team Performance Analytics":
                 size="Tasks assigned",
                 color="Daily closure rate",
                 hover_name="Team Member",
-                text="Team Member",
                 labels={
                     "Average turnaround time": "Avg Turnaround Time (Days)",
                     "SLA compliance": "SLA Compliance (%)",
@@ -1825,16 +1892,22 @@ elif page == "👥 Team Performance Analytics":
                 annotation_position="top right",
                 annotation=dict(bgcolor="rgba(255, 255, 255, 0.9)", bordercolor="#DC2626", borderwidth=1, borderpad=2, font=dict(color="#DC2626", size=10))
             )
-            fig_sla.update_traces(
-                textposition=scatter_label_positions,
-                textfont=dict(size=11, family="sans-serif", color="#1E293B")
-            )
+            for ann in scatter_annotations:
+                fig_sla.add_annotation(ann)
+
             max_all_turnaround = float(team_stats_df['Average turnaround time'].max()) if not team_stats_df.empty else 10.0
-            fig_sla.update_xaxes(range=[0, max(max_all_turnaround * 1.15, 14.0)])
-            fig_sla.update_yaxes(range=[-10, 110])
+            fig_sla.update_xaxes(
+                range=[-0.8, max(max_all_turnaround * 1.18, 14.0)],
+                automargin=True
+            )
+            fig_sla.update_yaxes(
+                range=[-8, 112],
+                automargin=True
+            )
+            fig_sla.update_traces(cliponaxis=False)
             fig_sla.update_layout(
-                height=380,
-                margin=dict(l=10, r=30, t=30, b=30),
+                height=430,
+                margin=dict(l=35, r=35, t=35, b=35),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)"
             )
