@@ -1759,7 +1759,7 @@ elif page == "👥 Team Performance Analytics":
             # ROW 2: SLA vs Turnaround Scatter Plot
             st.markdown("##### 🎯 SLA Compliance (%) vs. Average Turnaround Time")
 
-            # Intelligent collision-free label positioning across close proximity points
+            # Intelligent collision-free label positioning: moves labels up & down dynamically across tiers
             def _compute_scatter_annotations(df, x_col="Average turnaround time", y_col="SLA compliance", name_col="Team Member", max_annotations=16):
                 if df is None or df.empty:
                     return []
@@ -1767,8 +1767,8 @@ elif page == "👥 Team Performance Analytics":
                 working_df = df.copy()
                 if len(working_df) > max_annotations:
                     # Select most critical assignees (slowest turnaround, lowest SLA, highest workload)
-                    p1 = working_df.nlargest(6, x_col)
-                    p2 = working_df.nsmallest(5, y_col)
+                    p1 = working_df.nlargest(7, x_col)
+                    p2 = working_df.nsmallest(6, y_col)
                     combined_idx = list(set(p1.index.tolist() + p2.index.tolist()))
                     if len(combined_idx) < max_annotations:
                         remaining = working_df.drop(combined_idx)
@@ -1781,12 +1781,18 @@ elif page == "👥 Team Performance Analytics":
                     
                 sorted_df = working_df.sort_values(by=[x_col, y_col]).reset_index(drop=True)
                 n = len(sorted_df)
-                max_x = sorted_df[x_col].max() if n > 0 else 10.0
+                max_x = float(sorted_df[x_col].max()) if n > 0 else 10.0
                 plot_max_x = max(max_x * 1.18, 14.0)
+                plot_min_x = -0.8
+                x_span = plot_max_x - plot_min_x
+                
+                # Dynamic horizontal clearance: accounts for total x-axis scale so labels never collide
+                # (Assuming ~850px render width, each badge needs ~110px horizontal space)
+                horiz_clearance = max(1.8, (110.0 / 850.0) * x_span)
                 
                 def format_name(name):
                     parts = str(name).strip().split()
-                    if len(parts) >= 2 and len(name) > 12:
+                    if len(parts) >= 2 and len(name) > 11:
                         mid = len(parts) // 2
                         return ' '.join(parts[:mid]) + '<br>' + ' '.join(parts[mid:])
                     return str(name)
@@ -1794,31 +1800,34 @@ elif page == "👥 Team Performance Analytics":
                 annotations = []
                 placed = []
                 
+                # Deep multi-tier vertical lanes moving UP (for low SLA) or DOWN (for high SLA)
+                tiers_down = [28, 62, 96, 130, 164, 198, 232, 266]
+                tiers_up = [-28, -62, -96, -130, -164, -198, -232, -266]
+                
                 for idx, row in sorted_df.iterrows():
                     xi = float(row[x_col])
                     yi = float(row[y_col])
                     name = format_name(row[name_col])
                     
+                    candidate_ays = tiers_down if yi >= 70 else tiers_up
+                    
+                    # Detect tiers occupied by nearby points within horizontal clearance
                     used_tiers = set()
                     for px, py, pay, pax in placed:
-                        # Check collision if x is within 0.85 days and on same vertical side
-                        if abs(xi - px) < 0.85 and ((yi < 70 and py < 70) or (yi >= 70 and py >= 70)):
+                        same_side = (yi >= 70 and py >= 70) or (yi < 70 and py < 70)
+                        if same_side and abs(xi - px) < horiz_clearance:
                             used_tiers.add(pay)
                             
-                    if yi >= 70:
-                        candidate_ays = [28, 64, 100]
-                    else:
-                        candidate_ays = [-28, -64, -100, -136, -172]
-                        
-                    chosen_ay = candidate_ays[0]
+                    # Move up or down to the nearest available tier
+                    chosen_ay = None
                     for cay in candidate_ays:
                         if cay not in used_tiers:
                             chosen_ay = cay
                             break
-                    else:
-                        chosen_ay = candidate_ays[-1]
+                    if chosen_ay is None:
+                        chosen_ay = candidate_ays[len(placed) % len(candidate_ays)]
                         
-                    # Boundary protection to prevent clipping / trimming
+                    # Boundary protection to prevent clipping / trimming at edges
                     if xi < 1.0:
                         ax = 14
                         xanchor = 'left'
@@ -1826,12 +1835,12 @@ elif page == "👥 Team Performance Analytics":
                         ax = -14
                         xanchor = 'right'
                     else:
-                        same_x = [p for p in placed if abs(xi - p[0]) < 0.35 and p[2] == chosen_ay]
+                        same_x = [p for p in placed if abs(xi - p[0]) < 0.4 and p[2] == chosen_ay]
                         if len(same_x) == 1:
-                            ax = 14
+                            ax = 12
                             xanchor = 'left'
                         elif len(same_x) >= 2:
-                            ax = -14
+                            ax = -12
                             xanchor = 'right'
                         else:
                             ax = 0
@@ -1851,7 +1860,7 @@ elif page == "👥 Team Performance Analytics":
                         ax=ax,
                         ay=chosen_ay,
                         xanchor=xanchor,
-                        bgcolor="rgba(255, 255, 255, 0.94)",
+                        bgcolor="rgba(255, 255, 255, 0.95)",
                         bordercolor="#CBD5E1",
                         borderwidth=1,
                         borderpad=3,
@@ -1906,7 +1915,7 @@ elif page == "👥 Team Performance Analytics":
             )
             fig_sla.update_traces(cliponaxis=False)
             fig_sla.update_layout(
-                height=430,
+                height=480,
                 margin=dict(l=35, r=35, t=35, b=35),
                 plot_bgcolor="rgba(0,0,0,0)",
                 paper_bgcolor="rgba(0,0,0,0)"
