@@ -15,6 +15,31 @@ Every answer below is derived strictly from **real-time corporate ServiceNow tab
 
 ---
 
+## Master Record-Level Evidence Mapping
+
+To provide leadership with 100% audit-grade transparency, every question and comment has a dedicated, record-level evidence tab in [`reports/corporate_leadership_supporting_evidence.xlsx`](file:///c:/Users/Ansh%20Singh/OneDrive/Desktop/DATA%20CERTIFICATION%20KPI%20and%20PERFORMANCE%20ANALYTICS/reports/corporate_leadership_supporting_evidence.xlsx):
+
+| Slide & Question | Dedicated Evidence Tab | ServiceNow Production Source | Record Count | Key Fields Included in Evidence |
+|:---|:---|:---|:---:|:---|
+| **Slide 2: Q1 (>=95% Documentation)** | `Governance_Citations` & `Leadership_Briefing` | `config/kpi_definitions.yaml`, ITIL v4, SOX 404 | 9 rows | `Standard / Source`, `Key`, `Target Value`, `Audit Standard` |
+| **Slide 2: Q2 (96% SLA Achievement in Q2.26)** | `Q2_2026_Task_Evidence` | `cert_task` table | 4,939 rows | `number`, `assigned_to`, `state`, `sys_created_on`, `closed_at`, `due_date`, `is_closed`, `is_on_time` |
+| **Slide 2: Q3 (Daily Closure Rate & Multi-Cycle)** | `Daily_Closure_Rates` | `cert_task` & Calendar Engine | 6 rows | `Cycle`, `Window`, `Working Days`, `In-Scope Tasks`, `Closed Tasks`, `Daily Closure Rate`, `Avg Turnaround (days)` |
+| **Slide 2: Q4 (Discrepancies 100% vs 2 Open)** | `Discrepancy_Records` | `u_failed_data_certifications` | 2,364 rows | `number`, `u_certification_task`, `assigned_to`, `u_application`, `u_field`, `u_cmdb_ci`, `u_status`, `u_resolved_on` |
+| **Slide 2: Q5 (Backlog Reduction 2-Week Window)** | `Backlog_Aging_Tasks` | `cert_task` & `u_failed_data_certifications` | 887 rows | `number`, `assigned_to`, `state`, `sys_created_on`, `age_days`, `aging_bucket` (0-4d, 5-9d, 10-14d, 15+d Breached) |
+| **Slide 2: Q6 (Accuracy Pass Rate - Element Level)** | `Discrepancy_Records` & `CSDM_Governance_Domains` | `cert_element` / `u_failed_data_certifications` | 2,364 rows | `u_field`, `u_cmdb_ci`, `u_issue_category`, `Audited Element`, `Source Table` |
+| **Slide 2: Q7 (Certifier Productivity 8.78 to 9.05)** | `Certifier_Productivity` | `cert_task` aggregated by `assigned_to` | 26 certifiers | `Certifier Assignee`, `Q2 Completed Tasks`, `Q2 Velocity`, `Q4 Completed Tasks`, `Q4 Velocity`, `Workload Shift` |
+| **Slide 3: Q8 (US Holiday / Columbus Day 14 Days)** | `Daily_Closure_Rates` & `Q4_2026_Task_Evidence` | US Holiday Calendar & `cert_task` | 5,001 rows | `closed_before_columbus_day` (Oct 12 flag), adjusted daily closure rate (89.71 tasks/day) |
+| **Slide 3: Q9 (On-Time SLA at 95.7% for Q2.26)** | `Q2_2026_Task_Evidence` | `cert_task` table | 4,939 rows | Ticket-level breakdown of exactly 1,411 on-time tasks (`closed_at <= 2026-05-22 23:59:59`) |
+| **Slide 3: Q10 (Avg Completion Time Duration)** | `Q2_2026_Task_Evidence` & `Daily_Closure_Rates` | `cert_task` (`sys_created_on` to `closed_at`) | 4,939 rows | Exact duration in business days per ticket (`closed_at - sys_created_on`) |
+| **Slide 4: Q11 (Last-Minute % vs On-Time %)** | `Last_Minute_Tasks` | `cert_task` timestamp analysis | 2,154 rows | Tickets completed in final 24-48 hours before deadline, isolating pacing risk from 3-week SLA compliance |
+| **Slide 6: Q12 (Install Status: Business App vs CI)** | `Install_Status_Evidence` | `cmdb_ci_business_app` & `cmdb_ci` | 115 rows | Discrepancies specifically auditing `install_status` against active infrastructure |
+| **Slide 6: Q13 (Governance Domains Mapping)** | `CSDM_Governance_Domains` | ServiceNow CSDM 4.0 Standard | 9 elements | `Domain`, `Audited Element`, `Source Table`, `Description` (Ownership, Lifecycle, Operational domains) |
+| **Slide 7: Q14-15 (APM Coordination & RITM Latency)**| `Leadership_Briefing` (Row 14-15) | IT Service Management (`sc_req_item` / RITM) | Process Enhancement | Stage latency split separating active certifier work from external RITM approval wait time |
+| **Slide 8: Q16 (Actions Taken vs Recommendations)** | `Leadership_Briefing` (Row 16) | Governance Strategy | Executive Clarification | Formal reclassification of slide headers from "Actions Taken" to "Recommended Strategic Remediations" |
+| **Slide 8: Q17 (Fix Install Status at Source)** | `Install_Status_Evidence` & RCA Engine | Upstream Discovery / Service Graph Connectors | 115 rows | Technical blueprint to automate CI de-provisioning upstream rather than manual certifier cleanup |
+
+---
+
 ## Slide 2: Core KPI Targets, Velocity & Discrepancy Auditing
 
 ### 1. "Where are you getting the Completion Rate and SLA Achievement are targeted at => 95%? Is that number documented somewhere?"
