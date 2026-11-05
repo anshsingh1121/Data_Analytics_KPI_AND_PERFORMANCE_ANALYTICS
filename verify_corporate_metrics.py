@@ -326,50 +326,91 @@ def main():
             holiday_summary = pd.concat([holiday_summary, pd.DataFrame([holiday_row])], ignore_index=True)
         holiday_summary.to_excel(writer, sheet_name="Daily_Closure_Rates", index=False)
 
-        # Sheet 3: Q2-2026 Task Evidence (First 5000 rows)
+        # Sheet 3: Q2-2026 Task Evidence (Ticket-Level Rows for Q1, Q2, Q9)
         q2_export.head(5000).to_excel(writer, sheet_name="Q2_2026_Task_Evidence", index=False)
 
-        # Sheet 4: Certifier Productivity Proof (8.78 vs 9.05)
-        prod_rows = []
-        for c_info in [('Q2-2026 (Spring)', row_q2_26, 14), ('Q4-2026 (Autumn)', row_q4_26, 15), ('Q4-2026 (US Holiday Excluded)', row_q4_26, 14)]:
-            c_tag, c_row, c_days = c_info
-            if c_row is not None:
-                c_closures = int(c_row['Closed Tasks'])
-                c_daily = round(c_closures / c_days, 2)
-                c_certifiers = round(c_closures / (8.78 * c_days), 1) if 'Q2' in c_tag else round(c_closures / (9.05 * c_days), 2)
-                c_prod = round(c_closures / (max(0.1, c_certifiers) * c_days), 2)
-                prod_rows.append({
-                    "Cycle": c_tag,
-                    "Closed Tasks": c_closures,
-                    "Working Days": c_days,
-                    "Active Certifiers": c_certifiers,
-                    "Daily Team Rate (tasks/day)": c_daily,
-                    "Certifier Productivity (tasks/cert/day)": c_prod,
-                    "Mathematical Proof": f"{c_closures:,} / ({c_certifiers} certifiers * {c_days} days) = {c_prod} tasks/certifier-day"
-                })
-        pd.DataFrame(prod_rows).to_excel(writer, sheet_name="Certifier_Productivity", index=False)
+        # Sheet 4: Q4-2026 Task Evidence (Ticket-Level Rows for Q3, Q8)
+        q4_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name('Q4-2026'))
+        q4_start = pd.to_datetime(q4_meta.get('start_date')).date() if q4_meta.get('start_date') else None
+        q4_end = pd.to_datetime(q4_meta.get('end_date')).date() if q4_meta.get('end_date') else None
+        q4_deadline = pd.to_datetime(q4_meta.get('final_deadline') or f"{q4_end} 23:59:59")
+        q4_tasks = pd.DataFrame()
+        if date_col and q4_start and q4_end:
+            t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
+            q4_tasks = df[(t_dates >= q4_start) & (t_dates <= q4_end)].copy()
+        if q4_tasks.empty:
+            q4_tasks = df[df['certification_cycle'].isin(['Q4-2026'])].copy()
+        if not q4_tasks.empty:
+            q4_export = q4_tasks[export_cols].copy()
+            is_q4_closed = q4_export['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | q4_export['closed_at'].notna()
+            q4_export['is_closed'] = is_q4_closed
+            q4_export['is_on_time'] = is_q4_closed & (pd.to_datetime(q4_export['closed_at']) <= q4_deadline)
+            columbus_ts = pd.Timestamp('2026-10-12 23:59:59')
+            q4_export['closed_before_columbus_day'] = np.where(pd.to_datetime(q4_export['closed_at']) <= columbus_ts, 'Yes (Before Oct 12 Holiday)', 'No (Post-Holiday)')
+            q4_export.head(5000).to_excel(writer, sheet_name="Q4_2026_Task_Evidence", index=False)
 
-        # Sheet 5: Last Minute vs On-Time Day-by-Day Analysis
-        last_min_rows = []
+        # Sheet 5: Discrepancy Records Evidence (Failed Data Certifications for Q4, Q6)
+        disc_path = PROJECT_ROOT / "data" / "processed" / "discrepancies_processed.csv"
+        if not disc_path.exists():
+            runs_dir = PROJECT_ROOT / "data" / "runs"
+            latest_runs = sorted(runs_dir.glob("run_*/discrepancies_processed.csv"), reverse=True)
+            if latest_runs:
+                disc_path = latest_runs[0]
+        disc_df = pd.read_csv(disc_path) if disc_path.exists() else pd.DataFrame()
+        if not disc_df.empty:
+            disc_cols = [c for c in ['number', 'sys_id', 'u_certification_task', 'assigned_to', 'u_application', 'u_field', 'u_cmdb_ci', 'u_issue_category', 'u_status', 'sys_created_on', 'u_resolved_on', 'u_resolution_notes', 'certification_cycle'] if c in disc_df.columns]
+            disc_df[disc_cols].head(5000).to_excel(writer, sheet_name="Discrepancy_Records", index=False)
+
+            # Sheet 6: Install Status Discrepancies Evidence (for Q12, Q17)
+            install_mask = disc_df['u_field'].astype(str).str.lower().str.contains('install_status|status', na=False) | disc_df['u_issue_category'].astype(str).str.lower().str.contains('install_status|status', na=False)
+            install_df = disc_df[install_mask][disc_cols].copy()
+            if not install_df.empty:
+                install_df.head(3000).to_excel(writer, sheet_name="Install_Status_Evidence", index=False)
+
+        # Sheet 7: Certifier Roster Productivity Evidence (for Q7)
+        cert_roster_rows = []
+        q2_closed_tasks = df[df['certification_cycle'].isin(['Q2-2026', 'Q1-2026']) & (df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | df['closed_at'].notna())]
+        q4_closed_tasks = df[df['certification_cycle'].isin(['Q4-2026']) & (df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | df['closed_at'].notna())]
+        q2_c_counts = q2_closed_tasks['assigned_to'].value_counts() if 'assigned_to' in q2_closed_tasks.columns else pd.Series()
+        q4_c_counts = q4_closed_tasks['assigned_to'].value_counts() if 'assigned_to' in q4_closed_tasks.columns else pd.Series()
+        all_users = sorted(list(set(q2_c_counts.index.tolist() + q4_c_counts.index.tolist())))
+        for u in all_users:
+            c2 = int(q2_c_counts.get(u, 0))
+            c4 = int(q4_c_counts.get(u, 0))
+            cert_roster_rows.append({
+                "Certifier Assignee": u,
+                "Q2-2026 Completed Tasks": c2,
+                "Q2 Working Days": 14,
+                "Q2 Daily Velocity (tasks/day)": round(c2 / 14.0, 2) if c2 > 0 else 0.0,
+                "Q4-2026 Completed Tasks": c4,
+                "Q4 Working Days": 15,
+                "Q4 Daily Velocity (tasks/day)": round(c4 / 15.0, 2) if c4 > 0 else 0.0,
+                "Workload Shift": f"{c4 - c2:+d} tasks"
+            })
+        pd.DataFrame(cert_roster_rows).to_excel(writer, sheet_name="Certifier_Productivity", index=False)
+
+        # Sheet 8: Last-Minute Closure Task Records (Final 24-48h Rush for Q11)
         if 'closed_at' in q2_tasks.columns and not q2_tasks.empty:
             q2_closed_df = q2_tasks[is_closed_export].copy()
-            q2_closed_df['close_date'] = q2_closed_df['closed_at'].dt.date
-            day_counts = q2_closed_df['close_date'].value_counts().sort_index()
-            cum_count = 0
-            for d, count in day_counts.items():
-                cum_count += count
-                is_final_day = (d == q2_end)
-                last_min_rows.append({
-                    "Date": str(d),
-                    "Campaign Day": f"Day {len(last_min_rows) + 1}",
-                    "Tasks Closed on Date": count,
-                    "Cumulative Closed": cum_count,
-                    "Cumulative % of Total": f"{(cum_count / total_q2_in_scope * 100):.1f}%",
-                    "Classification": "Final 24h Rush (Last-Minute %)" if is_final_day else "On-Time Standard Window"
-                })
-        pd.DataFrame(last_min_rows).to_excel(writer, sheet_name="Last_Minute_vs_On_Time", index=False)
+            last_48h = q2_deadline - pd.Timedelta(days=2)
+            last_minute_tasks = q2_closed_df[pd.to_datetime(q2_closed_df['closed_at']) >= last_48h].copy()
+            lm_cols = [c for c in ['number', 'sys_id', 'assigned_to', 'sys_created_on', 'closed_at', 'due_date', 'cmdb_ci'] if c in last_minute_tasks.columns]
+            if not last_minute_tasks.empty:
+                last_minute_tasks[lm_cols].head(3000).to_excel(writer, sheet_name="Last_Minute_Tasks", index=False)
 
-        # Sheet 6: CSDM Governance Domains & Audited Categories
+        # Sheet 9: Backlog Aging Task Records (for Q5)
+        open_tasks = df[~df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved', 'cancelled', '7']) & df['closed_at'].isna()].copy()
+        if not open_tasks.empty and 'sys_created_on' in open_tasks.columns:
+            now_dt = pd.Timestamp.now()
+            open_tasks['age_days'] = (now_dt - pd.to_datetime(open_tasks['sys_created_on'], errors='coerce')).dt.total_seconds() / 86400.0
+            open_tasks['age_days'] = open_tasks['age_days'].fillna(0).round(1)
+            open_tasks['aging_bucket'] = np.where(open_tasks['age_days'] <= 4, '0-4 days',
+                                         np.where(open_tasks['age_days'] <= 9, '5-9 days',
+                                         np.where(open_tasks['age_days'] <= 14, '10-14 days', '15+ days (Breached)')))
+            b_cols = [c for c in ['number', 'sys_id', 'certification_cycle', 'assigned_to', 'state', 'sys_created_on', 'age_days', 'aging_bucket', 'cmdb_ci'] if c in open_tasks.columns]
+            open_tasks[b_cols].sort_values(by='age_days', ascending=False).head(3000).to_excel(writer, sheet_name="Backlog_Aging_Tasks", index=False)
+
+        # Sheet 10: CSDM Governance Domains & Audited Categories (for Q13)
         domain_rows = [
             {"Domain": "Ownership & Custodianship", "Audited Element": "u_access_reviewer", "Source Table": "cmdb_ci", "Description": "Designated employee custodian responsible for user entitlement review"},
             {"Domain": "Ownership & Custodianship", "Audited Element": "u_business_delegate", "Source Table": "cmdb_ci", "Description": "Secondary operational delegate authorized for business approvals"},
@@ -382,7 +423,7 @@ def main():
         ]
         pd.DataFrame(domain_rows).to_excel(writer, sheet_name="CSDM_Governance_Domains", index=False)
 
-        # Sheet 7: Target Documentation Audit Citations
+        # Sheet 11: Target Documentation Audit Citations (for Q1)
         citations_rows = [
             {"Standard / Source": "config/kpi_definitions.yaml", "Key": "kpi_1_certification_completion.thresholds.target", "Target Value": ">= 95.0%", "Status": "Configured & Active"},
             {"Standard / Source": "config/kpi_definitions.yaml", "Key": "kpi_3_on_time_completion.thresholds.target", "Target Value": ">= 95.0%", "Status": "Configured & Active"},
