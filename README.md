@@ -6,7 +6,7 @@ The system supports **ServiceNow Table API** extraction as well as a full **offl
 
 > 📖 **Quick Overview:** For a brief, to-the-point summary of the pipeline, business cycles, and operating modes, see the **[End-to-End Project Flow Guide](docs/PROJECT_FLOW.md)**.
 >
-> 📊 **Executive Briefing & Technical Audit:** For the complete mathematical breakdown, supporting data, and leadership answers regarding Q2/Q4 SLA Achievement, Daily Closure Rate velocity, and ≥95.0% target documentation, see the **[Executive Leadership KPI Briefing](docs/executive_leadership_kpi_briefing.md)**.
+> 📊 **Executive Leadership Q&A & Technical Audit:** For the complete evidence-backed answers to all presentation slide questions (Q2/Q4 SLA Achievement, Daily Closure Rate velocity, Certifier Productivity, US Holiday, CSDM Domains, APM RITMs, and ≥95.0% target documentation), see the **[Leadership Presentation Q&A Audit](docs/leadership_presentation_qa_responses.md)** and the **[Executive KPI Briefing](docs/executive_leadership_kpi_briefing.md)**.
 
 ---
 
