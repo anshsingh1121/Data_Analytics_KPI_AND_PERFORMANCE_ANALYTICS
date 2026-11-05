@@ -70,6 +70,11 @@ def main():
         date_cols = ['sys_created_on', 'due_date', 'closed_at', 'u_resolved_on']
         string_cols = ['state', 'assigned_to', 'cmdb_ci', 'u_issue_category', 'u_status']
         df = normalizer.normalize(raw_tasks, date_cols, string_cols)
+        # Cache to data/processed for instant dashboard and subsequent audits
+        out_proc = PROJECT_ROOT / "data" / "processed" / "cert_tasks_processed.csv"
+        out_proc.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(out_proc, index=False)
+        print(f"[OK] Saved live corporate records to: {out_proc}")
     else:
         if args.file:
             data_path = Path(args.file)
