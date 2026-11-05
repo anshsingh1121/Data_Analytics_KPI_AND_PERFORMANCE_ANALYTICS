@@ -16,6 +16,7 @@ This script:
 
 import os
 import sys
+import argparse
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -30,34 +31,65 @@ from src.analytics.cycle_manager import CycleManager
 from src.analytics.kpi_engine import KPIEngine
 
 def main():
+    parser = argparse.ArgumentParser(description="Corporate ServiceNow Verification & Leadership Audit")
+    parser.add_argument("--live", action="store_true", help="Fetch live records directly from ServiceNow API")
+    parser.add_argument("--file", type=str, default=None, help="Explicit path to corporate CSV file")
+    args = parser.parse_args()
+
     print("=" * 80)
     print("  CORPORATE SERVICENOW AUDIT & SUPPORTING EVIDENCE GENERATOR")
     print("=" * 80)
 
-    # 1. Locate Corporate Data
-    data_path = PROJECT_ROOT / "data" / "processed" / "cert_tasks_processed.csv"
-    if not data_path.exists():
-        # Check latest run
-        runs_dir = PROJECT_ROOT / "data" / "runs"
-        latest_runs = sorted(runs_dir.glob("run_*/cert_tasks_processed.csv"), reverse=True)
-        if latest_runs:
-            data_path = latest_runs[0]
-            print(f"[INFO] Using latest run processed data: {data_path}")
-        else:
-            print(f"[ERROR] No processed dataset found at: {data_path}")
-            print("Please ensure your corporate dataset is placed in 'data/processed/' or run:")
-            print("    python main.py pipeline --mode live")
-            return 1
-
-    print(f"[OK] Loading corporate dataset from: {data_path}")
-    df = pd.read_csv(data_path)
-    print(f"[OK] Total records loaded: {len(df):,}")
-
-    # Load configuration
     loader = ConfigLoader()
     cycle_cfg = loader.get_cycle_config()
     kpi_cfg = loader.get_kpi_config()
     cycle_mgr = CycleManager(cycle_cfg)
+    kpi_engine = KPIEngine(kpi_cfg, cycle_cfg)
+
+    # 1. Locate or Ingest Corporate Data
+    if args.live:
+        api_cfg = loader.get_api_config()
+        if not api_cfg.get('base_url'):
+            print("[ERROR] --live specified, but no API_BASE_URL found in .env.")
+            print("Please configure .env with API_BASE_URL, API_USERNAME, and API_PASSWORD.")
+            return 1
+        print(f"[LIVE MODE] Connecting to ServiceNow instance: {api_cfg['base_url']}...")
+        from main import get_service_now_client
+        from src.extraction.task_extractor import TaskExtractor
+        from src.data_processing.normalizer import DataNormalizer
+
+        client = get_service_now_client(loader)
+        field_map = loader.get_field_mapping()
+        t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
+        raw_tasks = t_ext.extract()
+        if raw_tasks.empty:
+            print("[ERROR] Live extraction returned 0 records. Check credentials and instance access.")
+            return 1
+        print(f"[OK] Live records extracted: {len(raw_tasks):,}")
+        normalizer = DataNormalizer(field_mapping={}, tz_config=loader.settings.get('timezone', 'UTC'))
+        date_cols = ['sys_created_on', 'due_date', 'closed_at', 'u_resolved_on']
+        string_cols = ['state', 'assigned_to', 'cmdb_ci', 'u_issue_category', 'u_status']
+        df = normalizer.normalize(raw_tasks, date_cols, string_cols)
+    else:
+        if args.file:
+            data_path = Path(args.file)
+        else:
+            data_path = PROJECT_ROOT / "data" / "processed" / "cert_tasks_processed.csv"
+            if not data_path.exists():
+                runs_dir = PROJECT_ROOT / "data" / "runs"
+                latest_runs = sorted(runs_dir.glob("run_*/cert_tasks_processed.csv"), reverse=True)
+                if latest_runs:
+                    data_path = latest_runs[0]
+                    print(f"[INFO] Using latest run processed data: {data_path}")
+                else:
+                    print(f"[ERROR] No processed dataset found at: {data_path}")
+                    print("Please ensure your corporate dataset is placed in 'data/processed/' or run:")
+                    print("    python verify_corporate_metrics.py --live")
+                    return 1
+
+        print(f"[OK] Loading corporate dataset from: {data_path}")
+        df = pd.read_csv(data_path)
+        print(f"[OK] Total records loaded: {len(df):,}")
     kpi_engine = KPIEngine(kpi_cfg, cycle_cfg)
 
     # Parse timestamps
