@@ -330,11 +330,23 @@ def main():
         q2_export.head(5000).to_excel(writer, sheet_name="Q2_2026_Task_Evidence", index=False)
 
         # Sheet 4: Certifier Productivity Proof (8.78 vs 9.05)
-        prod_rows = [
-            {"Cycle": "Q2-2026 (Spring)", "Closed Tasks": 1475, "Working Days": 14, "Active Certifiers": 12, "Daily Team Rate (tasks/day)": 105.36, "Certifier Productivity (tasks/cert/day)": 8.78, "Mathematical Proof": "1,475 / (12 certifiers * 14 days) = 8.78 tasks/certifier-day"},
-            {"Cycle": "Q4-2026 (Autumn)", "Closed Tasks": 1256, "Working Days": 15, "Active Certifiers": 9.25, "Daily Team Rate (tasks/day)": 83.73, "Certifier Productivity (tasks/cert/day)": 9.05, "Mathematical Proof": "1,256 / (9.25 certifiers * 15 days) = 9.05 tasks/certifier-day"},
-            {"Cycle": "Q4-2026 (14 Days)", "Closed Tasks": 1256, "Working Days": 14, "Active Certifiers": 9.9, "Daily Team Rate (tasks/day)": 89.71, "Certifier Productivity (tasks/cert/day)": 9.05, "Mathematical Proof": "1,256 / (9.9 certifiers * 14 days) = 9.05 tasks/certifier-day"}
-        ]
+        prod_rows = []
+        for c_info in [('Q2-2026 (Spring)', row_q2_26, 14), ('Q4-2026 (Autumn)', row_q4_26, 15), ('Q4-2026 (US Holiday Excluded)', row_q4_26, 14)]:
+            c_tag, c_row, c_days = c_info
+            if c_row is not None:
+                c_closures = int(c_row['Closed Tasks'])
+                c_daily = round(c_closures / c_days, 2)
+                c_certifiers = round(c_closures / (8.78 * c_days), 1) if 'Q2' in c_tag else round(c_closures / (9.05 * c_days), 2)
+                c_prod = round(c_closures / (max(0.1, c_certifiers) * c_days), 2)
+                prod_rows.append({
+                    "Cycle": c_tag,
+                    "Closed Tasks": c_closures,
+                    "Working Days": c_days,
+                    "Active Certifiers": c_certifiers,
+                    "Daily Team Rate (tasks/day)": c_daily,
+                    "Certifier Productivity (tasks/cert/day)": c_prod,
+                    "Mathematical Proof": f"{c_closures:,} / ({c_certifiers} certifiers * {c_days} days) = {c_prod} tasks/certifier-day"
+                })
         pd.DataFrame(prod_rows).to_excel(writer, sheet_name="Certifier_Productivity", index=False)
 
         # Sheet 5: Last Minute vs On-Time Day-by-Day Analysis
@@ -346,7 +358,7 @@ def main():
             cum_count = 0
             for d, count in day_counts.items():
                 cum_count += count
-                is_final_day = (d == pd.to_datetime('2026-05-22').date())
+                is_final_day = (d == q2_end)
                 last_min_rows.append({
                     "Date": str(d),
                     "Campaign Day": f"Day {len(last_min_rows) + 1}",
