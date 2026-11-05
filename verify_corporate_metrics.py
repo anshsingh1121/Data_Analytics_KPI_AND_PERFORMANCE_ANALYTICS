@@ -122,37 +122,38 @@ def main():
     print("QUESTION 1: Q2-2026 SLA ACHIEVEMENT (88%) VS COMPLETION RATE (96%)")
     print("=" * 80)
 
-    # Filter Q2-2026
-    q2_tasks = df[df['certification_cycle'].isin(['Q2-2026', 'Q1-2026'])].copy()
-    if q2_tasks.empty and 'sys_created_on' in df.columns:
-        q2_tasks = df[(df['sys_created_on'].dt.date >= pd.to_datetime('2026-05-05').date()) &
-                      (df['sys_created_on'].dt.date <= pd.to_datetime('2026-05-22').date())].copy()
+    # Filter Q2-2026 tasks by campaign dates or cycle tag
+    date_col = 'sys_created_on' if 'sys_created_on' in df.columns else None
+    q2_tasks = pd.DataFrame()
+    if date_col:
+        t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
+        q2_tasks = df[(t_dates >= pd.to_datetime('2026-05-05').date()) & (t_dates <= pd.to_datetime('2026-05-22').date())].copy()
+    if q2_tasks.empty:
+        q2_tasks = df[df['certification_cycle'].isin(['Q2-2026', 'Q1-2026'])].copy()
 
-    total_q2 = len(q2_tasks)
-    # Exclude cancelled if state=7
-    in_scope_q2 = q2_tasks[q2_tasks['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved', 'open', '1', 'work in progress', '2'])]
-    if len(in_scope_q2) > 0:
-        total_q2_in_scope = len(in_scope_q2)
-    else:
-        total_q2_in_scope = total_q2
+    # Calculate exact KPIs using KPIEngine
+    q2_kpis = kpi_engine.calculate_all_kpis(
+        q2_tasks, pd.DataFrame(),
+        working_days=14,
+        as_of_date='2026-05-22',
+        final_deadline='2026-05-22 23:59:59'
+    )
 
-    # Closed tasks
-    is_closed = q2_tasks['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | q2_tasks['closed_at'].notna()
-    closed_q2 = q2_tasks[is_closed]
-    n_closed_q2 = len(closed_q2)
+    kpi1 = q2_kpis['kpi_1_certification_completion']
+    kpi3 = q2_kpis['kpi_3_on_time_completion']
+    kpi12 = q2_kpis['kpi_12_sla_achievement']
 
-    # On-time tasks (closed_at <= due_date)
-    # Deadline: May 22, 2026 23:59:59
-    q2_deadline = pd.Timestamp('2026-05-22 23:59:59')
-    effective_due = q2_tasks['due_date'].fillna(q2_deadline)
-    on_time_mask = is_closed & (q2_tasks['closed_at'] <= effective_due)
-    n_on_time_q2 = int(on_time_mask.sum())
-    n_late_q2 = int((is_closed & (q2_tasks['closed_at'] > effective_due)).sum())
+    total_q2_in_scope = kpi1['denominator']
+    n_closed_q2 = kpi1['numerator']
+    completion_rate_q2 = kpi1['value']
+
+    n_on_time_q2 = kpi12['numerator']
+    sla_achievement_q2 = kpi12['value']
+
+    on_time_of_closed_q2 = kpi3['value']
+    n_on_time_closed = kpi3['numerator']
+    n_late_q2 = n_closed_q2 - n_on_time_closed
     n_open_q2 = total_q2_in_scope - n_closed_q2
-
-    completion_rate_q2 = (n_closed_q2 / total_q2_in_scope * 100) if total_q2_in_scope else 0
-    sla_achievement_q2 = (n_on_time_q2 / total_q2_in_scope * 100) if total_q2_in_scope else 0
-    on_time_of_closed_q2 = (n_on_time_q2 / n_closed_q2 * 100) if n_closed_q2 else 0
 
     print(f"Total In-Scope Q2-2026 Tasks : {total_q2_in_scope:,}")
     print(f"Closed Complete Tasks        : {n_closed_q2:,}")
@@ -268,9 +269,13 @@ def main():
     audit_cols = ['sys_id', 'number', 'state', 'sys_created_on', 'closed_at', 'due_date', 'assigned_to', 'assignment_group', 'cmdb_ci']
     export_cols = [c for c in audit_cols if c in q2_tasks.columns]
     q2_export = q2_tasks[export_cols].copy()
-    q2_export['is_closed'] = is_closed
-    q2_export['is_on_time'] = on_time_mask
-    q2_export['status_category'] = np.where(on_time_mask, 'Closed On-Time', np.where(is_closed, 'Closed Late', 'Open at Deadline'))
+    is_closed_export = q2_export['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | q2_export['closed_at'].notna()
+    effective_due_export = q2_export['due_date'].fillna(pd.Timestamp('2026-05-22 23:59:59'))
+    on_time_mask_export = is_closed_export & (q2_export['closed_at'] <= effective_due_export)
+
+    q2_export['is_closed'] = is_closed_export
+    q2_export['is_on_time'] = on_time_mask_export
+    q2_export['status_category'] = np.where(on_time_mask_export, 'Closed On-Time', np.where(is_closed_export, 'Closed Late', 'Open at Deadline'))
 
     # Build Excel Writer
     with pd.ExcelWriter(out_excel, engine='openpyxl') as writer:
