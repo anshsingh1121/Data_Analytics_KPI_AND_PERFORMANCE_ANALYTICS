@@ -28,11 +28,11 @@ class DataValidator:
         return df.duplicated(subset=[id_col], keep=False)
 
     def check_date_sequences(self, df: pd.DataFrame, start_col: str, end_col: str) -> pd.Series:
-        """Validates that start date <= end date."""
+        """Validates that start date <= end date for non-null timestamps."""
         if start_col in df.columns and end_col in df.columns:
-            start = pd.to_datetime(df[start_col])
-            end = pd.to_datetime(df[end_col])
-            return start > end
+            start = pd.to_datetime(df[start_col], errors='coerce')
+            end = pd.to_datetime(df[end_col], errors='coerce')
+            return start.notna() & end.notna() & (start > end)
         return pd.Series(False, index=df.index)
 
     def validate(self, df: pd.DataFrame, id_col: str, required_fields: List[str], date_seq_cols: List[Tuple[str, str]]) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:

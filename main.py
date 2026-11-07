@@ -405,11 +405,11 @@ def cmd_pipeline(args):
             for idx in tasks_resolved[mapped_deadlines.isna()].index:
                 d = dates.loc[idx]
                 if pd.notna(d):
-                    if d.year == 2026 and d.month <= 5: mapped_deadlines.loc[idx] = '2026-05-22 23:59:59'
-                    elif d.year == 2026 and d.month >= 10: mapped_deadlines.loc[idx] = '2026-10-23 23:59:59'
-                    elif d.year == 2025 and d.month <= 4: mapped_deadlines.loc[idx] = '2025-04-25 23:59:59'
-                    elif d.year == 2025 and d.month >= 10: mapped_deadlines.loc[idx] = '2025-10-23 23:59:59'
-                    else: mapped_deadlines.loc[idx] = f"{d.year}-{d.month:02d}-28 23:59:59"
+                    if d.year == 2026 and d.month <= 5 and d.day <= 22: mapped_deadlines.loc[idx] = '2026-05-22 23:59:59'
+                    elif d.year == 2026 and d.month >= 10 and d.day <= 23: mapped_deadlines.loc[idx] = '2026-10-23 23:59:59'
+                    elif d.year == 2025 and d.month <= 4 and d.day <= 25: mapped_deadlines.loc[idx] = '2025-04-25 23:59:59'
+                    elif d.year == 2025 and d.month >= 10 and d.day <= 23: mapped_deadlines.loc[idx] = '2025-10-23 23:59:59'
+                    else: mapped_deadlines.loc[idx] = f"{d.year}-{d.month:02d}-{min(d.day + 14, 28):02d} 23:59:59"
         
         mapped_deadlines = mapped_deadlines.fillna('2026-10-23 23:59:59')
         if 'due_date' not in tasks_resolved.columns:
@@ -417,6 +417,14 @@ def cmd_pipeline(args):
         else:
             parsed_due = pd.to_datetime(tasks_resolved['due_date'], errors='coerce')
             tasks_resolved['due_date'] = parsed_due.fillna(pd.to_datetime(mapped_deadlines))
+
+        # Defensive check: Ensure due_date >= sys_created_on across all tasks
+        if date_col and date_col in tasks_resolved.columns:
+            created_s = pd.to_datetime(tasks_resolved[date_col], errors='coerce')
+            bad_due_mask = tasks_resolved['due_date'].notna() & created_s.notna() & (tasks_resolved['due_date'] < created_s)
+            if bad_due_mask.any():
+                logger.warning(f"Detected {bad_due_mask.sum()} tasks with due_date < sys_created_on. Clamping due_date to sys_created_on.")
+                tasks_resolved.loc[bad_due_mask, 'due_date'] = created_s.loc[bad_due_mask]
 
         # Step 5b: Create Dedicated Timestamped Run Directory for Archived Raw & Processed Data
         run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -455,10 +463,10 @@ def cmd_pipeline(args):
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
 
         alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q1-2026'],
-            'Q4-2026': ['Q4-2026'],
-            'Q2-2025': ['Q2-2025', 'Q1-2025'],
-            'Q4-2025': ['Q4-2025']
+            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
+            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
+            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
+            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
         }
 
         for q_name in target_quarters:
@@ -510,6 +518,12 @@ def cmd_pipeline(args):
                     q_tasks['due_date'] = due_deadline
                 else:
                     q_tasks['due_date'] = pd.to_datetime(q_tasks['due_date'], errors='coerce').fillna(due_deadline)
+                # Ensure no due_date < sys_created_on in q_tasks
+                if date_col and date_col in q_tasks.columns:
+                    q_created = pd.to_datetime(q_tasks[date_col], errors='coerce')
+                    bad_q_due = q_tasks['due_date'].notna() & q_created.notna() & (q_tasks['due_date'] < q_created)
+                    if bad_q_due.any():
+                        q_tasks.loc[bad_q_due, 'due_date'] = q_created.loc[bad_q_due]
 
             q_disc = disc_resolved[disc_resolved['u_certification_task'].isin(q_tasks['sys_id'])].copy() if not q_tasks.empty else pd.DataFrame()
             

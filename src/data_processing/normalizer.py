@@ -20,7 +20,7 @@ class DataNormalizer:
         for col in date_cols:
             if col in df.columns:
                 try:
-                    df[col] = pd.to_datetime(df[col], errors='coerce', utc=True)
+                    df[col] = pd.to_datetime(df[col], errors='coerce', utc=True, format='mixed')
                     if self.tz_config != "UTC":
                         df[col] = df[col].dt.tz_convert(self.tz_config)
                     df[col] = df[col].dt.tz_localize(None)

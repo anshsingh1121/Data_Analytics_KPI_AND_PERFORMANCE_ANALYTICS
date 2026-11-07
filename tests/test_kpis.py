@@ -255,3 +255,30 @@ def test_compare_quarter_daily_trends():
     # Day 4: A holds 4 cumulative (100%), B finishes with 4 cumulative (100%) -> Tied
     assert comp_df.loc[comp_df['Working Day'] == 'Day 4', 'Pace Leader'].iloc[0] == 'Tied'
 
+def test_defensive_due_date_clamping():
+    """Verify that anomalous due_date < sys_created_on is defensively clamped and evaluated."""
+    engine = KPIEngine()
+    df = pd.DataFrame({
+        'sys_id': ['T1', 'T2'],
+        'state': ['Closed Complete', 'Closed Complete'],
+        'sys_created_on': ['2026-05-15 10:00:00', '2026-05-20 10:00:00'],
+        'due_date': ['2026-05-10 10:00:00', '2026-05-22 10:00:00'],
+        'closed_at': ['2026-05-15 11:00:00', '2026-05-21 10:00:00']
+    })
+    res = engine.kpi_3_on_time_completion(df)
+    assert res['available'] is True
+    assert res['value'] is not None
+
+def test_january_tasks_not_assigned_to_spring_q2():
+    """Verify that tasks created in January 2026 are never tagged as Q2-2026."""
+    from src.analytics.cycle_manager import CycleManager
+    cm = CycleManager({})
+    df = pd.DataFrame({
+        'sys_id': ['JAN_1', 'MAY_1'],
+        'sys_created_on': ['2026-01-15 09:00:00', '2026-05-10 09:00:00']
+    })
+    res = cm.assign_cycle_to_dataframe(df)
+    assert res.loc[res['sys_id'] == 'JAN_1', 'certification_cycle'].iloc[0] != 'Q2-2026'
+    assert res.loc[res['sys_id'] == 'MAY_1', 'certification_cycle'].iloc[0] == 'Q2-2026'
+
+

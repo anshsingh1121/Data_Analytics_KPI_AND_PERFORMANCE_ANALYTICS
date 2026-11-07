@@ -205,6 +205,15 @@ class KPIEngine:
         valid['closed_dt'] = self._to_dt(valid[closed_col])
         valid = valid.dropna(subset=['due_dt', 'closed_dt'])
 
+        # Defensive guard: if due_dt < created_dt (from ServiceNow schedule anomaly), clamp due_dt = created_dt
+        created_col = self._col(valid, ['sys_created_on', 'created_at'])
+        if created_col and created_col in valid.columns:
+            valid['created_dt'] = self._to_dt(valid[created_col])
+            anomalous = valid['created_dt'].notna() & (valid['due_dt'] < valid['created_dt'])
+            if anomalous.any():
+                logger.warning(f"Clamped {anomalous.sum()} tasks in KPI 3 where due_date < sys_created_on.")
+                valid.loc[anomalous, 'due_dt'] = valid.loc[anomalous, 'created_dt']
+
         on_time = valid[valid['closed_dt'] <= valid['due_dt']]
         late = valid[valid['closed_dt'] > valid['due_dt']]
 
@@ -551,6 +560,15 @@ class KPIEngine:
             else:
                 tasks_df[due_col] = pd.to_datetime(tasks_df[due_col], errors='coerce').fillna(d_due)
 
+        # Defensive guard: clamp due_date >= sys_created_on
+        created_col = self._col(tasks_df, ['sys_created_on', 'created_at'])
+        if created_col and due_col and due_col in tasks_df.columns:
+            c_s = self._to_dt(tasks_df[created_col])
+            d_s = self._to_dt(tasks_df[due_col])
+            bad_m = d_s.notna() & c_s.notna() & (d_s < c_s)
+            if bad_m.any():
+                tasks_df.loc[bad_m, due_col] = c_s.loc[bad_m]
+
         completed = tasks_df[tasks_df[state_col].isin(["Closed Complete", "Closed Incomplete"])].copy()
         if not due_col or not closed_col or due_col not in tasks_df.columns or closed_col not in tasks_df.columns:
             return self._create_kpi_result(name, None, 0, 0, len(completed), unit, desired_trend, False, warnings=["Due date or closed date column missing"])
@@ -766,6 +784,15 @@ class KPIEngine:
                 effective_tasks[due_col] = pd.to_datetime(effective_tasks[due_col], errors='coerce').fillna(d_due)
                 if due_col != 'due_date':
                     effective_tasks['due_date'] = effective_tasks[due_col]
+
+            # Defensive guard: clamp due_date >= sys_created_on
+            c_col = self._col(effective_tasks, ['sys_created_on', 'created_at'])
+            if c_col and c_col in effective_tasks.columns:
+                c_series = self._to_dt(effective_tasks[c_col])
+                d_series = self._to_dt(effective_tasks['due_date'])
+                bad_m = d_series.notna() & c_series.notna() & (d_series < c_series)
+                if bad_m.any():
+                    effective_tasks.loc[bad_m, 'due_date'] = c_series.loc[bad_m]
 
         results = {}
         results['kpi_1_certification_completion'] = self.kpi_1_certification_completion(effective_tasks)

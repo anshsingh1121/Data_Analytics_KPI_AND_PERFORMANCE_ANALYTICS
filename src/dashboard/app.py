@@ -102,11 +102,11 @@ def load_processed_data():
                 for idx in tasks[mapped.isna()].index:
                     d = dates.loc[idx]
                     if pd.notna(d):
-                        if d.year == 2026 and d.month <= 6: mapped.loc[idx] = '2026-05-22 23:59:59'
-                        elif d.year == 2026 and d.month >= 10: mapped.loc[idx] = '2026-10-23 23:59:59'
-                        elif d.year == 2025 and d.month <= 6: mapped.loc[idx] = '2025-04-25 23:59:59'
-                        elif d.year == 2025 and d.month >= 10: mapped.loc[idx] = '2025-10-23 23:59:59'
-                        else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-28 23:59:59"
+                        if d.year == 2026 and d.month <= 5 and d.day <= 22: mapped.loc[idx] = '2026-05-22 23:59:59'
+                        elif d.year == 2026 and d.month >= 10 and d.day <= 23: mapped.loc[idx] = '2026-10-23 23:59:59'
+                        elif d.year == 2025 and d.month <= 4 and d.day <= 25: mapped.loc[idx] = '2025-04-25 23:59:59'
+                        elif d.year == 2025 and d.month >= 10 and d.day <= 23: mapped.loc[idx] = '2025-10-23 23:59:59'
+                        else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-{min(d.day + 14, 28):02d} 23:59:59"
             
             mapped = mapped.fillna('2026-10-23 23:59:59')
             if 'due_date' not in tasks.columns:
@@ -114,6 +114,13 @@ def load_processed_data():
             else:
                 parsed_due = pd.to_datetime(tasks['due_date'], errors='coerce')
                 tasks['due_date'] = parsed_due.fillna(pd.to_datetime(mapped))
+
+            # Defensive clamp: ensure due_date >= sys_created_on across all tasks
+            if date_col and date_col in tasks.columns:
+                created_s = pd.to_datetime(tasks[date_col], errors='coerce')
+                bad_due = tasks['due_date'].notna() & created_s.notna() & (tasks['due_date'] < created_s)
+                if bad_due.any():
+                    tasks.loc[bad_due, 'due_date'] = created_s.loc[bad_due]
 
         return tasks, disc
     return None, None
@@ -189,24 +196,29 @@ with st.sidebar:
             help="Filters metrics in the Campaign Overview & Certifier page."
         )
 
-        alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q1-2026'],
-            'Q4-2026': ['Q4-2026'],
-            'Q2-2025': ['Q2-2025', 'Q1-2025'],
-            'Q4-2025': ['Q4-2025']
-        }
-        filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
-        c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy() if cycle_col in tasks_df.columns else tasks_df.copy()
-        
         c_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(selected_cycle))
-        date_col = 'sys_created_on' if 'sys_created_on' in c_tasks.columns else ('created_at' if 'created_at' in c_tasks.columns else None)
+        date_col = 'sys_created_on' if 'sys_created_on' in tasks_df.columns else ('created_at' if 'created_at' in tasks_df.columns else None)
+        
+        # Priority 1: Strict Campaign Date Range Filter (Prevents January/out-of-window tasks from leaking into Q2)
+        c_tasks = pd.DataFrame()
         if date_col and c_meta.get('start_date') and c_meta.get('end_date'):
             s_date = pd.to_datetime(c_meta['start_date']).date()
             e_date = pd.to_datetime(c_meta['end_date']).date()
-            t_dates = pd.to_datetime(c_tasks[date_col], errors='coerce').dt.date
-            date_filtered = c_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
-            if not date_filtered.empty:
-                c_tasks = date_filtered
+            t_dates = pd.to_datetime(tasks_df[date_col], errors='coerce').dt.date
+            c_tasks = tasks_df[(t_dates >= s_date) & (t_dates <= e_date)].copy()
+        
+        # Priority 2: Fallback to exact cycle match only
+        if c_tasks.empty and cycle_col in tasks_df.columns:
+            alias_map = {
+                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
+                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
+                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
+                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
+            }
+            filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
+            c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy()
+        elif c_tasks.empty:
+            c_tasks = tasks_df.copy()
         
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()
@@ -279,10 +291,10 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         
     if q_t.empty and q_col in df_tasks.columns:
         alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q1-2026', 'Q2', 'Q1'],
-            'Q4-2026': ['Q4-2026', 'Q4'],
-            'Q2-2025': ['Q2-2025', 'Q1-2025', 'Q2', 'Q1'],
-            'Q4-2025': ['Q4-2025', 'Q4']
+            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
+            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
+            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
+            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
         }
         match_cycles = alias_map.get(q_name, [q_name])
         q_t = df_tasks[df_tasks[q_col].isin(match_cycles)].copy()
@@ -294,6 +306,12 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
             q_t['due_date'] = window_deadline
         else:
             q_t['due_date'] = pd.to_datetime(q_t['due_date'], errors='coerce').fillna(window_deadline)
+        # Defensive clamp: ensure due_date >= sys_created_on
+        if date_col and date_col in q_t.columns:
+            q_created = pd.to_datetime(q_t[date_col], errors='coerce')
+            bad_q_due = q_t['due_date'].notna() & q_created.notna() & (q_t['due_date'] < q_created)
+            if bad_q_due.any():
+                q_t.loc[bad_q_due, 'due_date'] = q_created.loc[bad_q_due]
 
     q_d = df_disc[df_disc['u_certification_task'].isin(q_t['sys_id'])].copy() if df_disc is not None and not df_disc.empty and 'u_certification_task' in df_disc.columns and not q_t.empty else pd.DataFrame()
     w_days = cycle_mgr.calculate_working_days(s_date, e_date)
