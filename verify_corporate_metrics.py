@@ -17,6 +17,7 @@ This script:
 import os
 import sys
 import argparse
+from datetime import date, datetime
 from pathlib import Path
 import pandas as pd
 import numpy as np
@@ -117,19 +118,33 @@ def main():
                     cycle_deadlines[c_name] = pd.to_datetime(c_deadline)
 
     # Ensure valid due dates and prevent due_date < sys_created_on
-    if 'due_date' not in df.columns or df['due_date'].isna().all():
-        df['due_date'] = df['certification_cycle'].map(cycle_deadlines)
-    else:
-        df['due_date'] = df['due_date'].fillna(df['certification_cycle'].map(cycle_deadlines))
+    if 'due_date' not in df.columns:
+        df['due_date'] = pd.NaT
+
+    # Smart deadline imputation:
+    missing_due = df['due_date'].isna()
+    if missing_due.any():
+        for idx in df[missing_due].index:
+            c_name = df.loc[idx, 'certification_cycle'] if 'certification_cycle' in df.columns else None
+            created = df.loc[idx, 'sys_created_on'] if 'sys_created_on' in df.columns else None
+            c_dl = cycle_deadlines.get(c_name)
+            if pd.notna(created) and pd.notna(c_dl):
+                if created > c_dl:
+                    # Post-campaign extension: standard 14 calendar day ITIL SLA
+                    df.loc[idx, 'due_date'] = created + pd.Timedelta(days=14)
+                else:
+                    df.loc[idx, 'due_date'] = c_dl
+            elif pd.notna(c_dl):
+                df.loc[idx, 'due_date'] = c_dl
 
     # Defensive check: If due_date < sys_created_on (e.g. from ServiceNow schedule misconfiguration,
-    # DD/MM parsing inversion, or late creation), clamp due_date to at least sys_created_on
+    # DD/MM parsing inversion, or late creation), clamp due_date to sys_created_on + 14 days
     if 'due_date' in df.columns and 'sys_created_on' in df.columns:
         bad_due_mask = df['due_date'].notna() & df['sys_created_on'].notna() & (df['due_date'] < df['sys_created_on'])
         if bad_due_mask.any():
             n_bad = bad_due_mask.sum()
-            print(f"[DATA QUALITY WARNING] Found {n_bad:,} records with due_date < sys_created_on (e.g. schedule anomaly or date format inversion). Clamping due_date to sys_created_on.")
-            df.loc[bad_due_mask, 'due_date'] = df.loc[bad_due_mask, 'sys_created_on']
+            print(f"[DATA QUALITY WARNING] Found {n_bad:,} records with due_date < sys_created_on (e.g. schedule anomaly or date format inversion). Clamping due_date to sys_created_on + 14 days.")
+            df.loc[bad_due_mask, 'due_date'] = df.loc[bad_due_mask, 'sys_created_on'] + pd.Timedelta(days=14)
 
     print("\n" + "=" * 80)
     print("QUESTION 1: Q2-2026 SLA ACHIEVEMENT VS COMPLETION RATE AUDIT")
@@ -142,10 +157,12 @@ def main():
     q2_deadline = pd.to_datetime(q2_meta.get('final_deadline') or f"{q2_end} 23:59:59")
     q2_working_days = cycle_mgr.calculate_working_days(q2_meta.get('start_date'), q2_meta.get('end_date')) if (q2_meta.get('start_date') and q2_meta.get('end_date')) else 14
 
-    # Filter Q2-2026 tasks by campaign dates or cycle tag (3-tier resolution)
+    # Filter Q2-2026 tasks by cycle tag or campaign dates (prioritizes cycle tag so tasks outside May 5-22 are included)
     date_col = 'sys_created_on' if 'sys_created_on' in df.columns else None
     q2_tasks = pd.DataFrame()
-    if date_col and q2_start and q2_end:
+    if 'certification_cycle' in df.columns and (df['certification_cycle'] == 'Q2-2026').any():
+        q2_tasks = df[df['certification_cycle'] == 'Q2-2026'].copy()
+    elif date_col and q2_start and q2_end:
         t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
         q2_tasks = df[(t_dates >= q2_start) & (t_dates <= q2_end)].copy()
     if q2_tasks.empty:
@@ -188,6 +205,39 @@ def main():
     audit_cols = ['sys_id', 'number', 'state', 'sys_created_on', 'closed_at', 'due_date', 'assigned_to', 'assignment_group', 'cmdb_ci']
     export_cols = [c for c in audit_cols if c in q2_tasks.columns]
     q2_export = q2_tasks[export_cols].copy()
+
+    # Campaign Window Tagging for Q2
+    if 'sys_created_on' in q2_tasks.columns:
+        c_dates = pd.to_datetime(q2_tasks['sys_created_on'], errors='coerce').dt.date
+        q2_export['campaign_window_tag'] = np.where(
+            (c_dates >= date(2026, 5, 5)) & (c_dates <= date(2026, 5, 22)),
+            'Inside Official Window (May 5 - May 22)',
+            np.where(
+                c_dates < date(2026, 5, 5),
+                'Outside Window (Pre-Campaign April)',
+                'Outside Window (Post-Campaign Extension)'
+            )
+        )
+    else:
+        q2_export['campaign_window_tag'] = 'Inside Official Window (May 5 - May 22)'
+
+    # Due Date Derivation Logic Tagging for Q2
+    if 'due_date' in q2_tasks.columns and 'sys_created_on' in q2_tasks.columns:
+        d_dates = pd.to_datetime(q2_tasks['due_date'], errors='coerce')
+        c_dates = pd.to_datetime(q2_tasks['sys_created_on'], errors='coerce')
+        is_camp_due = (d_dates.dt.date == date(2026, 5, 22))
+        q2_export['due_date_logic'] = np.where(
+            is_camp_due,
+            'Official Campaign Cutoff (May 22, 2026)',
+            np.where(
+                c_dates.dt.date < date(2026, 5, 5),
+                'ServiceNow Native SLA (Pre-Campaign 14-Day)',
+                'Post-Campaign Extension SLA'
+            )
+        )
+    else:
+        q2_export['due_date_logic'] = 'Official Campaign Cutoff (May 22, 2026)'
+
     is_closed_export = q2_export['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | q2_export['closed_at'].notna()
     effective_due_export = q2_export['due_date'].fillna(q2_deadline)
     on_time_mask_export = is_closed_export & (q2_export['closed_at'] <= effective_due_export)
@@ -406,23 +456,18 @@ def main():
         print("--> (Tip: Close Excel if you want future runs to overwrite the primary file).\n")
         out_excel = alt
 
-    # Prepare Q2 Audit Export
-    audit_cols = ['sys_id', 'number', 'state', 'sys_created_on', 'closed_at', 'due_date', 'assigned_to', 'assignment_group', 'cmdb_ci']
-    export_cols = [c for c in audit_cols if c in q2_tasks.columns]
-    q2_export = q2_tasks[export_cols].copy()
-    is_closed_export = q2_export['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | q2_export['closed_at'].notna()
-    effective_due_export = q2_export['due_date'].fillna(q2_deadline)
-    on_time_mask_export = is_closed_export & (q2_export['closed_at'] <= effective_due_export)
+    # Format Q2 Export for Excel
+    q2_write = q2_export.copy()
+    if 'closed_at' in q2_write.columns:
+        q2_write['closed_at'] = pd.to_datetime(q2_write['closed_at'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('Active / Pending Closure')
+    if 'due_date' in q2_write.columns:
+        q2_write['due_date'] = pd.to_datetime(q2_write['due_date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna(str(q2_deadline))
+    if 'sys_created_on' in q2_write.columns:
+        q2_write['sys_created_on'] = pd.to_datetime(q2_write['sys_created_on'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('N/A')
 
-    q2_export['is_closed'] = is_closed_export
-    q2_export['is_on_time'] = on_time_mask_export
-    q2_export['status_category'] = np.where(on_time_mask_export, 'Closed On-Time', np.where(is_closed_export, 'Closed Late', 'Open at Deadline'))
-    if 'closed_at' in q2_export.columns:
-        q2_export['closed_at'] = pd.to_datetime(q2_export['closed_at'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('Active / Pending Closure')
-    if 'due_date' in q2_export.columns:
-        q2_export['due_date'] = pd.to_datetime(q2_export['due_date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna(str(q2_deadline))
-    if 'sys_created_on' in q2_export.columns:
-        q2_export['sys_created_on'] = pd.to_datetime(q2_export['sys_created_on'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('N/A')
+    front_cols = ['number', 'campaign_window_tag', 'status_category', 'is_on_time', 'sys_created_on', 'due_date', 'closed_at', 'due_date_logic', 'assigned_to', 'assignment_group', 'cmdb_ci', 'sys_id']
+    q2_ordered = [c for c in front_cols if c in q2_write.columns] + [c for c in q2_write.columns if c not in front_cols]
+    q2_write = q2_write[q2_ordered]
 
     # Build Excel Writer safely handling potential runtime file lock
     try:
@@ -467,7 +512,7 @@ def main():
         holiday_summary.to_excel(writer, sheet_name="Daily_Closure_Rates", index=False)
 
         # Sheet 3: Q2-2026 Task Evidence (Ticket-Level Rows for Q1, Q2, Q9)
-        q2_export.head(5000).to_excel(writer, sheet_name="Q2_2026_Task_Evidence", index=False)
+        q2_write.head(5000).to_excel(writer, sheet_name="Q2_2026_Task_Evidence", index=False)
 
         # Sheet 4: Q4-2026 Task Evidence (Ticket-Level Rows for Q3, Q8)
         q4_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name('Q4-2026'))
@@ -475,15 +520,45 @@ def main():
         q4_end = pd.to_datetime(q4_meta.get('end_date')).date() if q4_meta.get('end_date') else None
         q4_deadline = pd.to_datetime(q4_meta.get('final_deadline') or f"{q4_end} 23:59:59")
         q4_tasks = pd.DataFrame()
-        if date_col and q4_start and q4_end:
+        if 'certification_cycle' in df.columns and (df['certification_cycle'] == 'Q4-2026').any():
+            q4_tasks = df[df['certification_cycle'] == 'Q4-2026'].copy()
+        elif date_col and q4_start and q4_end:
             t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
             q4_tasks = df[(t_dates >= q4_start) & (t_dates <= q4_end)].copy()
-        if q4_tasks.empty:
-            q4_cycle_col = 'certification_cycle' if 'certification_cycle' in df.columns else None
-            if q4_cycle_col:
-                q4_tasks = df[df[q4_cycle_col].isin(['Q4-2026'])].copy()
         if not q4_tasks.empty:
             q4_export = q4_tasks[export_cols].copy()
+
+            # Campaign Window Tagging for Q4
+            if 'sys_created_on' in q4_tasks.columns:
+                c_dates = pd.to_datetime(q4_tasks['sys_created_on'], errors='coerce').dt.date
+                q4_export['campaign_window_tag'] = np.where(
+                    (c_dates >= date(2026, 10, 5)) & (c_dates <= date(2026, 10, 23)),
+                    'Inside Official Window (Oct 5 - Oct 23)',
+                    np.where(
+                        c_dates < date(2026, 10, 5),
+                        'Outside Window (Pre-Campaign)',
+                        'Outside Window (Post-Campaign Extension)'
+                    )
+                )
+            else:
+                q4_export['campaign_window_tag'] = 'Inside Official Window (Oct 5 - Oct 23)'
+
+            if 'due_date' in q4_tasks.columns and 'sys_created_on' in q4_tasks.columns:
+                d_dates = pd.to_datetime(q4_tasks['due_date'], errors='coerce')
+                c_dates = pd.to_datetime(q4_tasks['sys_created_on'], errors='coerce')
+                is_camp_due = (d_dates.dt.date == date(2026, 10, 23))
+                q4_export['due_date_logic'] = np.where(
+                    is_camp_due,
+                    'Official Campaign Cutoff (Oct 23, 2026)',
+                    np.where(
+                        c_dates.dt.date < date(2026, 10, 5),
+                        'ServiceNow Native SLA (Pre-Campaign 14-Day)',
+                        'Post-Campaign Extension SLA'
+                    )
+                )
+            else:
+                q4_export['due_date_logic'] = 'Official Campaign Cutoff (Oct 23, 2026)'
+
             state_col_q4 = 'state' if 'state' in q4_export.columns else ('status' if 'status' in q4_export.columns else None)
             is_q4_closed = q4_export[state_col_q4].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) if state_col_q4 else pd.Series(True, index=q4_export.index)
             if 'closed_at' in q4_export.columns:
@@ -504,7 +579,11 @@ def main():
                 q4_export['due_date'] = pd.to_datetime(q4_export['due_date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna(str(q4_deadline))
             if 'sys_created_on' in q4_export.columns:
                 q4_export['sys_created_on'] = pd.to_datetime(q4_export['sys_created_on'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('N/A')
-            q4_export.head(5000).to_excel(writer, sheet_name="Q4_2026_Task_Evidence", index=False)
+
+            q4_front = ['number', 'campaign_window_tag', 'status_category', 'is_on_time', 'sys_created_on', 'due_date', 'closed_at', 'due_date_logic', 'closed_before_columbus_day', 'assigned_to', 'assignment_group', 'cmdb_ci', 'sys_id']
+            q4_ordered = [c for c in q4_front if c in q4_export.columns] + [c for c in q4_export.columns if c not in q4_front]
+            q4_write = q4_export[q4_ordered]
+            q4_write.head(5000).to_excel(writer, sheet_name="Q4_2026_Task_Evidence", index=False)
 
         # Sheet 5: Discrepancy Records Evidence (Failed Data Certifications for Q4, Q6)
         disc_path = PROJECT_ROOT / "data" / "processed" / "discrepancies_processed.csv"
@@ -684,6 +763,18 @@ def main():
         open_font = Font(name="Calibri", size=10, bold=True, color="9A3412")                    # Bold Dark Amber text
         ontime_font = Font(name="Calibri", size=10, bold=True, color="166534")                  # Deep Forest Green text
 
+        # Distinct Campaign Window Badges & Highlighting (Outside Window Evidence):
+        inside_fill = PatternFill(start_color="ECFDF5", end_color="ECFDF5", fill_type="solid")    # Soft Mint / Emerald
+        inside_font = Font(name="Calibri", size=10, bold=True, color="047857")                  # Emerald Green
+        pre_camp_fill = PatternFill(start_color="F3E8FF", end_color="F3E8FF", fill_type="solid") # Soft Lavender / Purple
+        pre_camp_font = Font(name="Calibri", size=10, bold=True, color="6B21A8")                # Deep Royal Purple
+        pre_camp_row_fill = PatternFill(start_color="FAF5FF", end_color="FAF5FF", fill_type="solid") # Gentle purple tint
+        post_camp_fill = PatternFill(start_color="E0F2FE", end_color="E0F2FE", fill_type="solid")# Soft Sky / Blue
+        post_camp_font = Font(name="Calibri", size=10, bold=True, color="0369A1")               # Deep Ocean Blue
+        post_camp_row_fill = PatternFill(start_color="F0F9FF", end_color="F0F9FF", fill_type="solid") # Gentle blue tint
+
+        logic_font = Font(name="Calibri", size=9, italic=True, color="475569")
+
         thin_border = Border(
             left=Side(style='thin', color='D9D9D9'),
             right=Side(style='thin', color='D9D9D9'),
@@ -705,11 +796,14 @@ def main():
             status_col = header_map.get('status_category')
             ontime_col = header_map.get('is_on_time')
             bucket_col = header_map.get('aging_bucket')
+            window_col = header_map.get('campaign_window_tag')
+            logic_col = header_map.get('due_date_logic')
 
             for row in ws.iter_rows(min_row=2):
                 row_status = str(row[status_col - 1].value or '').strip() if status_col else None
                 row_ontime = str(row[ontime_col - 1].value or '').strip() if ontime_col else None
                 row_bucket = str(row[bucket_col - 1].value or '').strip() if bucket_col else None
+                row_window = str(row[window_col - 1].value or '').strip() if window_col else None
 
                 # Detect SLA breach:
                 is_breached = False
@@ -728,6 +822,10 @@ def main():
                     is_breached = True
                     breach_kind = 'late'
 
+                # Detect Outside Campaign Window:
+                is_outside_pre = row_window and 'pre-campaign' in row_window.lower()
+                is_outside_post = row_window and 'post-campaign' in row_window.lower()
+
                 for cell in row:
                     cell.font = data_font
                     cell.border = thin_border
@@ -736,12 +834,17 @@ def main():
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
 
-                    # Highlight entire row if task breached SLA
+                    # Highlight entire row:
+                    # Breaches take priority; outside-window compliant tasks receive distinctive tint
                     if is_breached:
                         if breach_kind == 'open':
                             cell.fill = open_fill
                         else:
                             cell.fill = late_fill
+                    elif is_outside_pre:
+                        cell.fill = pre_camp_row_fill
+                    elif is_outside_post:
+                        cell.fill = post_camp_row_fill
 
                 # Emphasize specific status badges
                 if status_col:
@@ -759,6 +862,25 @@ def main():
                         oc.font = late_font
                     elif str(oc.value).lower() in ['true', '1']:
                         oc.font = ontime_font
+
+                # Campaign Window Tag Badge
+                if window_col:
+                    wc = row[window_col - 1]
+                    val_w = str(wc.value or '').lower()
+                    if 'inside' in val_w:
+                        wc.fill = inside_fill
+                        wc.font = inside_font
+                    elif 'pre-campaign' in val_w:
+                        wc.fill = pre_camp_fill
+                        wc.font = pre_camp_font
+                    elif 'post-campaign' in val_w:
+                        wc.fill = post_camp_fill
+                        wc.font = post_camp_font
+
+                # Due Date Logic font styling
+                if logic_col:
+                    lc = row[logic_col - 1]
+                    lc.font = logic_font
 
             for col in ws.columns:
                 col_letter = col[0].column_letter
