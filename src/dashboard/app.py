@@ -111,11 +111,17 @@ def load_processed_data():
                 for idx in tasks[mapped.isna()].index:
                     d = dates.loc[idx]
                     if pd.notna(d):
-                        if d.year == 2026 and d.month <= 5 and d.day <= 22: mapped.loc[idx] = '2026-05-22 23:59:59'
-                        elif d.year == 2026 and d.month >= 10 and d.day <= 23: mapped.loc[idx] = '2026-10-23 23:59:59'
-                        elif d.year == 2025 and d.month <= 4 and d.day <= 25: mapped.loc[idx] = '2025-04-25 23:59:59'
-                        elif d.year == 2025 and d.month >= 10 and d.day <= 23: mapped.loc[idx] = '2025-10-23 23:59:59'
-                        else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-{min(d.day + 14, 28):02d} 23:59:59"
+                        dt_val = d.date() if hasattr(d, 'date') else d
+                        if date(2026, 5, 5) <= dt_val <= date(2026, 5, 22):
+                            mapped.loc[idx] = '2026-05-22 23:59:59'
+                        elif date(2026, 10, 5) <= dt_val <= date(2026, 10, 23):
+                            mapped.loc[idx] = '2026-10-23 23:59:59'
+                        elif date(2025, 4, 7) <= dt_val <= date(2025, 4, 25):
+                            mapped.loc[idx] = '2025-04-25 23:59:59'
+                        elif date(2025, 10, 6) <= dt_val <= date(2025, 10, 23):
+                            mapped.loc[idx] = '2025-10-23 23:59:59'
+                        else:
+                            mapped.loc[idx] = f"{dt_val.year}-{dt_val.month:02d}-{min(dt_val.day + 14, 28):02d} 23:59:59"
             
             mapped = mapped.fillna('2026-10-23 23:59:59')
             if 'due_date' not in tasks.columns or tasks['due_date'].isna().all():
@@ -225,8 +231,6 @@ with st.sidebar:
             }
             filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
             c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy()
-        elif c_tasks.empty:
-            c_tasks = tasks_df.copy()
         
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()

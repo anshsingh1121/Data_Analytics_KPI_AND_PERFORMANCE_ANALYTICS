@@ -149,7 +149,7 @@ def main():
         t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
         q2_tasks = df[(t_dates >= q2_start) & (t_dates <= q2_end)].copy()
     if q2_tasks.empty:
-        q2_tasks = df[df['certification_cycle'].isin(['Q2-2026', 'Q1-2026'])].copy()
+        q2_tasks = df[df['certification_cycle'] == 'Q2-2026'].copy()
 
     # Calculate exact KPIs using KPIEngine directly on corporate data
     q2_kpis = kpi_engine.calculate_all_kpis(
@@ -208,7 +208,7 @@ def main():
         
         # Priority 2: Fallback to cycle activity tags only if date filter yielded 0 records
         if c_df.empty:
-            c_df = df[df['certification_cycle'].isin([c_name, f"Q1-{c_name.split('-')[1]}"])].copy()
+            c_df = df[df['certification_cycle'] == c_name].copy()
 
         tot = len(c_df)
         c_closed = c_df[c_df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | c_df['closed_at'].notna()]

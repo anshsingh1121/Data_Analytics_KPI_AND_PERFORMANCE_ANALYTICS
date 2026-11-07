@@ -405,11 +405,17 @@ def cmd_pipeline(args):
             for idx in tasks_resolved[mapped_deadlines.isna()].index:
                 d = dates.loc[idx]
                 if pd.notna(d):
-                    if d.year == 2026 and d.month <= 5 and d.day <= 22: mapped_deadlines.loc[idx] = '2026-05-22 23:59:59'
-                    elif d.year == 2026 and d.month >= 10 and d.day <= 23: mapped_deadlines.loc[idx] = '2026-10-23 23:59:59'
-                    elif d.year == 2025 and d.month <= 4 and d.day <= 25: mapped_deadlines.loc[idx] = '2025-04-25 23:59:59'
-                    elif d.year == 2025 and d.month >= 10 and d.day <= 23: mapped_deadlines.loc[idx] = '2025-10-23 23:59:59'
-                    else: mapped_deadlines.loc[idx] = f"{d.year}-{d.month:02d}-{min(d.day + 14, 28):02d} 23:59:59"
+                    dt_val = d.date() if hasattr(d, 'date') else d
+                    if date(2026, 5, 5) <= dt_val <= date(2026, 5, 22):
+                        mapped_deadlines.loc[idx] = '2026-05-22 23:59:59'
+                    elif date(2026, 10, 5) <= dt_val <= date(2026, 10, 23):
+                        mapped_deadlines.loc[idx] = '2026-10-23 23:59:59'
+                    elif date(2025, 4, 7) <= dt_val <= date(2025, 4, 25):
+                        mapped_deadlines.loc[idx] = '2025-04-25 23:59:59'
+                    elif date(2025, 10, 6) <= dt_val <= date(2025, 10, 23):
+                        mapped_deadlines.loc[idx] = '2025-10-23 23:59:59'
+                    else:
+                        mapped_deadlines.loc[idx] = f"{dt_val.year}-{dt_val.month:02d}-{min(dt_val.day + 14, 28):02d} 23:59:59"
         
         mapped_deadlines = mapped_deadlines.fillna('2026-10-23 23:59:59')
         if 'due_date' not in tasks_resolved.columns:
@@ -477,12 +483,12 @@ def cmd_pipeline(args):
             e_date = pd.to_datetime(q_meta.get('end_date')).date() if q_meta.get('end_date') else None
             
             q_tasks = pd.DataFrame()
-            # Priority 1: Filter directly by configured campaign dates on task creation date
+            # Strict Campaign Window Filtering: Only tasks created within [start_date, end_date]
             if date_col and s_date and e_date:
                 t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
                 q_tasks = tasks_resolved[(t_dates >= s_date) & (t_dates <= e_date)].copy()
             
-            # Priority 2: Fallback to cycle activity tag if date filter gave 0 records
+            # Exact cycle activity tag match if date filter gave 0 records
             if q_tasks.empty:
                 match_cycles = alias_map.get(q_name, [q_name])
                 for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
@@ -491,26 +497,6 @@ def cmd_pipeline(args):
                         if not matched.empty:
                             q_tasks = matched
                             break
-            
-            # Priority 3: Fallback to calendar 3-month quarter if still empty
-            if q_tasks.empty and date_col:
-                parts = q_name.split('-')
-                q_num, yr = parts[0], int(parts[1])
-                cal_bounds = {
-                    'Q1': (date(yr, 1, 1), date(yr, 3, 31)),
-                    'Q2': (date(yr, 4, 1), date(yr, 6, 30)),
-                    'Q3': (date(yr, 7, 1), date(yr, 9, 30)),
-                    'Q4': (date(yr, 10, 1), date(yr, 12, 31))
-                }
-                cal_s, cal_e = cal_bounds.get(q_num, (s_date, e_date))
-                all_t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
-                cal_filtered = tasks_resolved[(all_t_dates >= cal_s) & (all_t_dates <= cal_e)].copy()
-                if not cal_filtered.empty:
-                    q_tasks = cal_filtered
-                    q_meta['start_date'] = str(cal_s)
-                    q_meta['end_date'] = str(cal_e)
-                    q_meta['final_deadline'] = str(cal_e)
-                    s_date, e_date = cal_s, cal_e
 
             due_deadline = pd.to_datetime(f"{e_date} 23:59:59") if e_date else None
             if not q_tasks.empty and due_deadline:

@@ -40,40 +40,34 @@ class CycleManager:
         })
 
     def get_cycle_by_name(self, name: str) -> Dict[str, Any]:
-        """Returns cycle dict by name, with dynamic calendar quarter fallback."""
+        """
+        Returns cycle dict by name strictly from configured campaign cycles.
+        Strictly enforces defined window dates (e.g. Q4-2026: Oct 5 - Oct 23, 2026).
+        NO 3-month calendar fallbacks!
+        """
         if name in self.cycles:
             return self.cycles[name]
         if self.current_cycle.get('name') == name:
             return self.current_cycle
         if self.previous_cycle.get('name') == name:
             return self.previous_cycle
+        if self.config.get('yoy_cycle', {}).get('name') == name:
+            return self.config['yoy_cycle']
 
-        # Dynamic fallback for any quarter-year string e.g. 'Q2-2025'
-        try:
-            if '-' in name and name.startswith('Q'):
-                parts = name.split('-')
-                q_num = int(parts[0].replace('Q', ''))
-                yr = int(parts[1])
-                start_m = (q_num - 1) * 3 + 1
-                end_m = q_num * 3
-                import calendar
-                last_day = calendar.monthrange(yr, end_m)[1]
-                return {
-                    'name': name,
-                    'quarter_label': f"Q{q_num} {yr}",
-                    'year': yr,
-                    'quarter': q_num,
-                    'start_date': f"{yr}-{start_m:02d}-01",
-                    'end_date': f"{yr}-{end_m:02d}-{last_day:02d}",
-                    'final_deadline': f"{yr}-{end_m:02d}-{max(1, last_day - 7):02d}"
-                }
-        except Exception:
-            pass
+        # Check configured cycles dictionary case-insensitively
+        for c_key, c_val in self.cycles.items():
+            if c_key.upper().replace('_', '-') == name.upper().replace('_', '-'):
+                return c_val
 
-        return {'name': name, 'start_date': '2026-10-01', 'end_date': '2026-12-31', 'final_deadline': '2026-12-23'}
+        logger.warning(f"Requested cycle '{name}' is not in configured campaign cycles. Returning empty window.")
+        return {'name': name, 'start_date': None, 'end_date': None, 'final_deadline': None}
 
     def assign_cycle_to_dataframe(self, df: pd.DataFrame, date_col: str = 'sys_created_on') -> pd.DataFrame:
-        """Assigns quarter cycle name (e.g. Q2-2025, Q4-2025, Q2-2026, Q4-2026) based on timestamp."""
+        """
+        Strictly assigns quarter campaign name based on timestamp.
+        Only tasks created strictly within official campaign window dates are assigned.
+        Tasks outside official windows are tagged 'Out of Campaign' (no 3-month calendar fallbacks).
+        """
         if df is None or df.empty:
             return df
             
@@ -94,9 +88,9 @@ class CycleManager:
         def _match_cycle(ts):
             if pd.isna(ts):
                 return 'Unknown'
-            d = ts.date()
+            d = ts.date() if hasattr(ts, 'date') else ts
 
-            # Date-wise campaign processing as specified:
+            # Strict non-overlapping campaign windows:
             # Q4 2026: Oct 5 - Oct 23, 2026
             if date(2026, 10, 5) <= d <= date(2026, 10, 23):
                 return 'Q4-2026'
@@ -113,7 +107,7 @@ class CycleManager:
             if date(2025, 4, 7) <= d <= date(2025, 4, 25):
                 return 'Q2-2025'
 
-            # Check configured cycle boundaries in self.cycles
+            # Check any other explicitly configured cycle boundaries in self.cycles
             for c_name, c_info in self.cycles.items():
                 if c_info.get('start_date') and c_info.get('end_date'):
                     s = pd.to_datetime(c_info['start_date']).date()
@@ -121,11 +115,9 @@ class CycleManager:
                     if s <= d <= e:
                         return c_name
 
-            # Fallback by year and month into 4 calendar quarters
-            y = ts.year
-            m = ts.month
-            q = (m - 1) // 3 + 1
-            return f"Q{q}-{y}"
+            # STRICT: Any task outside the defined campaign dates is Out of Campaign.
+            # NO 3-month calendar fallbacks!
+            return 'Out of Campaign'
 
         df['certification_cycle'] = dt_series.apply(_match_cycle)
         return df

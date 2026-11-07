@@ -155,11 +155,11 @@ Campaign cycles are strictly bounded by configured business dates:
 | **Q4 2025** | Autumn | **Oct 6, 2025 – Oct 23, 2025** | 14 Working Days | `2025-10-23 23:59:59` |
 | **Q2 2025 (Q1 Spring)** | Spring | **Apr 7, 2025 – Apr 25, 2025** | 15 Working Days | `2025-04-25 23:59:59` |
 
-#### The 3-Priority Filtering Waterfall:
-When assigning tasks to a quarter or filtering during pipeline execution:
-1. **Priority 1 (Strict Timestamp Boundary)**: Filters task `sys_created_on` between `start_date` and `end_date` of the campaign window.
-2. **Priority 2 (Cycle Tag Fallback)**: If Priority 1 returns 0 records, filters by `certification_cycle` or `u_certification_activity` column values matching the quarter alias.
-3. **Priority 3 (Calendar Quarter Fallback)**: If still empty, falls back to standard 3-month calendar boundaries (e.g. Q4 = Oct 1 to Dec 31).
+#### Strict Campaign Window Filtering (No 3-Month Calendar Fallbacks):
+When assigning tasks to a quarter or filtering during pipeline execution, the pipeline strictly respects configured dates:
+1. **Strict Timestamp Boundary (Primary)**: Filters task `sys_created_on` between the exact `start_date` and `end_date` of the campaign window (e.g. May 5 – May 22, 2026 for Q2-2026).
+2. **Exact Cycle Tag Match (Secondary)**: If filtering by column tags, only records matching the exact cycle identifier (`certification_cycle == 'Q2-2026'`) are admitted.
+3. **Out-of-Campaign Strict Handling**: Any record whose creation date falls outside official campaign dates is tagged as `'Out of Campaign'`. The engine **strictly prohibits** and rejects any 3-month calendar math fallbacks (e.g. mapping June or January records to Q2 via `(month - 1) // 3 + 1`), guaranteeing absolute boundary integrity.
 
 ### 4.4 Working Days Calculation Logic
 Working days elapsed are calculated using `numpy.busday_count`:
