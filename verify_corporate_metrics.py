@@ -488,14 +488,17 @@ def main():
             is_q4_closed = q4_export[state_col_q4].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) if state_col_q4 else pd.Series(True, index=q4_export.index)
             if 'closed_at' in q4_export.columns:
                 is_q4_closed = is_q4_closed | q4_export['closed_at'].notna()
+                is_q4_on_time = is_q4_closed & (pd.to_datetime(q4_export['closed_at'], errors='coerce') <= q4_deadline)
                 q4_export['is_closed'] = is_q4_closed
-                q4_export['is_on_time'] = is_q4_closed & (pd.to_datetime(q4_export['closed_at'], errors='coerce') <= q4_deadline)
+                q4_export['is_on_time'] = is_q4_on_time
+                q4_export['status_category'] = np.where(is_q4_on_time, 'Closed On-Time', np.where(is_q4_closed, 'Closed Late', 'Open at Deadline'))
                 columbus_ts = pd.Timestamp('2026-10-12 23:59:59')
                 q4_export['closed_before_columbus_day'] = np.where(pd.to_datetime(q4_export['closed_at'], errors='coerce') <= columbus_ts, 'Yes (Before Oct 12 Holiday)', 'No (Post-Holiday)')
                 q4_export['closed_at'] = pd.to_datetime(q4_export['closed_at'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna('Active / In-Progress')
             else:
                 q4_export['is_closed'] = is_q4_closed
                 q4_export['is_on_time'] = True
+                q4_export['status_category'] = np.where(is_q4_closed, 'Closed On-Time', 'Open at Deadline')
                 q4_export['closed_before_columbus_day'] = 'N/A'
             if 'due_date' in q4_export.columns:
                 q4_export['due_date'] = pd.to_datetime(q4_export['due_date'], errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').fillna(str(q4_deadline))
@@ -664,7 +667,7 @@ def main():
         ]
         pd.DataFrame(citations_rows).to_excel(writer, sheet_name="Governance_Citations", index=False)
 
-    # Apply Executive Styling (Navy headers, auto column widths, borders)
+    # Apply Executive Styling (Navy headers, auto column widths, borders, SLA breach highlighting)
     try:
         from openpyxl import load_workbook
         from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -673,6 +676,14 @@ def main():
         header_fill = PatternFill(start_color="1F497D", end_color="1F497D", fill_type="solid")
         header_font = Font(name="Calibri", size=11, bold=True, color="FFFFFF")
         data_font = Font(name="Calibri", size=10)
+
+        # Highlight styles for SLA breaches:
+        late_fill = PatternFill(start_color="FEE2E2", end_color="FEE2E2", fill_type="solid")     # Soft Rose / Light Red (Tailwind Red-100)
+        late_font = Font(name="Calibri", size=10, bold=True, color="991B1B")                    # Bold Dark Red text
+        open_fill = PatternFill(start_color="FFEDD5", end_color="FFEDD5", fill_type="solid")     # Soft Amber / Orange (Tailwind Amber-100)
+        open_font = Font(name="Calibri", size=10, bold=True, color="9A3412")                    # Bold Dark Amber text
+        ontime_font = Font(name="Calibri", size=10, bold=True, color="166534")                  # Deep Forest Green text
+
         thin_border = Border(
             left=Side(style='thin', color='D9D9D9'),
             right=Side(style='thin', color='D9D9D9'),
@@ -682,14 +693,41 @@ def main():
 
         for ws in wb.worksheets:
             ws.views.sheetView[0].showGridLines = True
-            for cell in ws[1]:
+            header_map = {}
+            for col_idx, cell in enumerate(ws[1], start=1):
                 cell.fill = header_fill
                 cell.font = header_font
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
                 cell.border = thin_border
+                header_map[str(cell.value or '').strip().lower()] = col_idx
             ws.row_dimensions[1].height = 28
 
+            status_col = header_map.get('status_category')
+            ontime_col = header_map.get('is_on_time')
+            bucket_col = header_map.get('aging_bucket')
+
             for row in ws.iter_rows(min_row=2):
+                row_status = str(row[status_col - 1].value or '').strip() if status_col else None
+                row_ontime = str(row[ontime_col - 1].value or '').strip() if ontime_col else None
+                row_bucket = str(row[bucket_col - 1].value or '').strip() if bucket_col else None
+
+                # Detect SLA breach:
+                is_breached = False
+                breach_kind = None
+
+                if row_status == 'Closed Late':
+                    is_breached = True
+                    breach_kind = 'late'
+                elif row_status == 'Open at Deadline':
+                    is_breached = True
+                    breach_kind = 'open'
+                elif row_ontime and row_ontime.lower() in ['false', '0']:
+                    is_breached = True
+                    breach_kind = 'late'
+                elif row_bucket and 'breached' in row_bucket.lower():
+                    is_breached = True
+                    breach_kind = 'late'
+
                 for cell in row:
                     cell.font = data_font
                     cell.border = thin_border
@@ -697,6 +735,30 @@ def main():
                         cell.alignment = Alignment(horizontal="right", vertical="center")
                     else:
                         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
+
+                    # Highlight entire row if task breached SLA
+                    if is_breached:
+                        if breach_kind == 'open':
+                            cell.fill = open_fill
+                        else:
+                            cell.fill = late_fill
+
+                # Emphasize specific status badges
+                if status_col:
+                    sc = row[status_col - 1]
+                    if sc.value == 'Closed Late':
+                        sc.font = late_font
+                    elif sc.value == 'Open at Deadline':
+                        sc.font = open_font
+                    elif sc.value == 'Closed On-Time':
+                        sc.font = ontime_font
+
+                if ontime_col:
+                    oc = row[ontime_col - 1]
+                    if str(oc.value).lower() in ['false', '0']:
+                        oc.font = late_font
+                    elif str(oc.value).lower() in ['true', '1']:
+                        oc.font = ontime_font
 
             for col in ws.columns:
                 col_letter = col[0].column_letter
