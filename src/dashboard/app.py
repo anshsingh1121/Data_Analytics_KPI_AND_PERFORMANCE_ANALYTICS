@@ -95,12 +95,10 @@ def load_processed_data():
         # Ensure consistent campaign window end dates for due_date imputation
         if tasks is not None and not tasks.empty:
             campaign_deadlines = {
-                'Q2-2026': '2026-05-22 23:59:59',
                 'Q4-2026': '2026-10-23 23:59:59',
-                'Q2-2025': '2025-04-25 23:59:59',
+                'Q2-2026': '2026-05-22 23:59:59',
                 'Q4-2025': '2025-10-23 23:59:59',
-                'Q1-2026': '2026-05-22 23:59:59',
-                'Q1-2025': '2025-04-25 23:59:59',
+                'Q2-2025': '2025-04-25 23:59:59',
             }
             cycle_col = 'certification_cycle' if 'certification_cycle' in tasks.columns else ('u_certification_activity' if 'u_certification_activity' in tasks.columns else None)
             mapped = tasks[cycle_col].map(campaign_deadlines) if cycle_col else pd.Series(index=tasks.index, dtype='object')
@@ -197,11 +195,8 @@ with st.sidebar:
 
     if tasks_df is not None and not tasks_df.empty:
         cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_df.columns else ('u_certification_activity' if 'u_certification_activity' in tasks_df.columns else 'u_certification_cycle')
-        detected = list(tasks_df[cycle_col].dropna().unique()) if cycle_col in tasks_df.columns else []
-        preferred = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
-        available_cycles = [c for c in preferred if c in detected] + [c for c in detected if c not in preferred]
-        if not available_cycles:
-            available_cycles = preferred
+        # Strictly constrained to the 4 official campaigns: Q2 and Q4 (2026, 2025)
+        available_cycles = ['Q4-2026', 'Q2-2026', 'Q4-2025', 'Q2-2025']
         
         selected_cycle = st.selectbox(
             "Active Campaign Cycle",
@@ -264,24 +259,14 @@ curr_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(selected_cy
 prev_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.previous_cycle)
 
 def get_default_dates(year: int, q_str: str, preset: str = "Campaign Window"):
-    """Returns sensible default start and end dates for a given year, quarter, and preset style."""
-    if preset == "Campaign Window":
-        if year == 2026:
-            if q_str in ["Q1", "Q2"]: return date(2026, 5, 5), date(2026, 5, 22)
-            else: return date(2026, 10, 5), date(2026, 10, 23)
-        else:
-            if q_str in ["Q1", "Q2"]: return date(2025, 4, 7), date(2025, 4, 25)
-            else: return date(2025, 10, 6), date(2025, 10, 23)
-    elif preset == "Complete Month":
-        if year == 2026:
-            if q_str in ["Q1", "Q2"]: return date(2026, 5, 1), date(2026, 5, 31)
-            else: return date(2026, 10, 1), date(2026, 10, 31)
-        else:
-            if q_str in ["Q1", "Q2"]: return date(2025, 4, 1), date(2025, 4, 30)
-            else: return date(2025, 10, 1), date(2025, 10, 31)
-    else:
-        if q_str in ["Q1", "Q2"]: return date(year, 4, 1), date(year, 6, 30)
-        else: return date(year, 10, 1), date(year, 12, 31)
+    """Strictly returns official campaign start and end dates constrained to Q2 and Q4 (2026, 2025)."""
+    if year == 2026:
+        if q_str == "Q2": return date(2026, 5, 5), date(2026, 5, 22)
+        elif q_str == "Q4": return date(2026, 10, 5), date(2026, 10, 23)
+    elif year == 2025:
+        if q_str == "Q2": return date(2025, 4, 7), date(2025, 4, 25)
+        elif q_str == "Q4": return date(2025, 10, 6), date(2025, 10, 23)
+    return None, None
 
 def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
     if df_tasks is None or df_tasks.empty:

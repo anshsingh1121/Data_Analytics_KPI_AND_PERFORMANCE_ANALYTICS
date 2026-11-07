@@ -16,24 +16,49 @@ class CycleManager:
         self._init_cycles()
 
     def _init_cycles(self):
-        """Extracts current and previous cycle from config."""
+        """Extracts current and previous cycle from config, defaulting strictly to the 4 official campaigns."""
         self.cycles = self.config.get('cycles', {})
-        self.current_cycle = self.config.get('current_cycle', {
-            'name': 'Q4-2026',
-            'quarter_label': 'Oct 5 - Oct 23, 2026',
-            'start_date': '2026-10-05',
-            'end_date': '2026-10-23',
-            'final_deadline': '2026-10-23'
-        })
-        self.previous_cycle = self.config.get('previous_cycle', {
-            'name': 'Q2-2026',
-            'quarter_label': 'May 5 - May 22, 2026',
-            'year': 2026,
-            'quarter': 2,
-            'start_date': '2026-05-05',
-            'end_date': '2026-05-22',
-            'final_deadline': '2026-05-22'
-        })
+        if not self.cycles:
+            self.cycles = {
+                'Q4-2026': {
+                    'name': 'Q4-2026',
+                    'quarter_label': 'Oct 5 - Oct 23, 2026',
+                    'year': 2026,
+                    'quarter': 4,
+                    'start_date': '2026-10-05',
+                    'end_date': '2026-10-23',
+                    'final_deadline': '2026-10-23'
+                },
+                'Q2-2026': {
+                    'name': 'Q2-2026',
+                    'quarter_label': 'May 5 - May 22, 2026',
+                    'year': 2026,
+                    'quarter': 2,
+                    'start_date': '2026-05-05',
+                    'end_date': '2026-05-22',
+                    'final_deadline': '2026-05-22'
+                },
+                'Q4-2025': {
+                    'name': 'Q4-2025',
+                    'quarter_label': 'Oct 6 - Oct 23, 2025',
+                    'year': 2025,
+                    'quarter': 4,
+                    'start_date': '2025-10-06',
+                    'end_date': '2025-10-23',
+                    'final_deadline': '2025-10-23'
+                },
+                'Q2-2025': {
+                    'name': 'Q2-2025',
+                    'quarter_label': 'Apr 7 - Apr 25, 2025',
+                    'year': 2025,
+                    'quarter': 2,
+                    'start_date': '2025-04-07',
+                    'end_date': '2025-04-25',
+                    'final_deadline': '2025-04-25'
+                }
+            }
+        self.current_cycle = self.config.get('current_cycle', self.cycles.get('Q4-2026'))
+        self.previous_cycle = self.config.get('previous_cycle', self.cycles.get('Q2-2026'))
         self.comparison_settings = self.config.get('comparison_settings', {
             'mode': 'like_for_like',
             'align_by': 'working_days_elapsed'

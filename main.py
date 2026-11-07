@@ -387,14 +387,10 @@ def cmd_pipeline(args):
 
         # Impute due_date with exact campaign window end dates (23:59:59) if missing or null
         campaign_deadlines = {
-            'Q1-2026': '2026-05-22 23:59:59',
-            'Q2-2026': '2026-05-22 23:59:59',
-            'Q3-2026': '2026-07-31 23:59:59',
             'Q4-2026': '2026-10-23 23:59:59',
-            'Q1-2025': '2025-04-25 23:59:59',
-            'Q2-2025': '2025-04-25 23:59:59',
-            'Q3-2025': '2025-09-30 23:59:59',
+            'Q2-2026': '2026-05-22 23:59:59',
             'Q4-2025': '2025-10-23 23:59:59',
+            'Q2-2025': '2025-04-25 23:59:59',
         }
         cycle_col = 'certification_cycle' if 'certification_cycle' in tasks_resolved.columns else None
         mapped_deadlines = tasks_resolved[cycle_col].map(campaign_deadlines) if cycle_col else pd.Series(index=tasks_resolved.index, dtype='object')
