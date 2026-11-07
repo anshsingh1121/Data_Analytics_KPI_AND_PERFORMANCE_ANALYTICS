@@ -20,6 +20,22 @@ from src.analytics.trend_analysis import TrendAnalyzer
 from src.reporting.report_generator import ReportGenerator
 from src.data_processing.normalizer import DataNormalizer
 
+def safe_float(val, default=0.0):
+    if val is None or pd.isna(val):
+        return float(default)
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return float(default)
+
+def safe_int(val, default=0):
+    if val is None or pd.isna(val):
+        return int(default)
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return int(default)
+
 # -----------------------------------------------------------------------------
 # Streamlit App Configuration
 # -----------------------------------------------------------------------------
@@ -208,7 +224,7 @@ with st.sidebar:
         c_meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(selected_cycle))
         date_col = 'sys_created_on' if 'sys_created_on' in tasks_df.columns else ('created_at' if 'created_at' in tasks_df.columns else None)
         
-        # Priority 1: Strict Campaign Date Range Filter (Prevents January/out-of-window tasks from leaking into Q2)
+        # Priority 1: Strict Campaign Date Range Filter
         c_tasks = pd.DataFrame()
         if date_col and c_meta.get('start_date') and c_meta.get('end_date'):
             s_date = pd.to_datetime(c_meta['start_date']).date()
@@ -216,16 +232,33 @@ with st.sidebar:
             t_dates = DataNormalizer.parse_datetime_safely(tasks_df[date_col]).dt.date
             c_tasks = tasks_df[(t_dates >= s_date) & (t_dates <= e_date)].copy()
         
-        # Priority 2: Fallback to exact cycle match only
-        if c_tasks.empty and cycle_col in tasks_df.columns:
+        # Priority 2: Fallback to exact cycle / activity match across all possible column names
+        if c_tasks.empty:
             alias_map = {
-                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
-                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
-                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
-                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
+                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
+                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
+                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
+                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
             }
             filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
-            c_tasks = tasks_df[tasks_df[cycle_col].isin(filter_cycles)].copy()
+            for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+                if col_c in tasks_df.columns:
+                    matched = tasks_df[tasks_df[col_c].astype(str).str.strip().isin(filter_cycles)].copy()
+                    if not matched.empty:
+                        c_tasks = matched
+                        break
+
+        # Priority 3: Fallback for Spring season campaign window (April - May)
+        if c_tasks.empty and date_col and date_col in tasks_df.columns:
+            t_dates = DataNormalizer.parse_datetime_safely(tasks_df[date_col]).dt.date
+            if selected_cycle == 'Q2-2026':
+                c_tasks = tasks_df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+            elif selected_cycle == 'Q2-2025':
+                c_tasks = tasks_df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+            elif selected_cycle == 'Q4-2026':
+                c_tasks = tasks_df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+            elif selected_cycle == 'Q4-2025':
+                c_tasks = tasks_df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
         
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()
@@ -286,15 +319,31 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         t_dates = DataNormalizer.parse_datetime_safely(df_tasks[date_col]).dt.date
         q_t = df_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
         
-    if q_t.empty and q_col in df_tasks.columns:
+    if q_t.empty:
         alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
-            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
-            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
-            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
+            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
+            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
+            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
+            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
         }
         match_cycles = alias_map.get(q_name, [q_name])
-        q_t = df_tasks[df_tasks[q_col].isin(match_cycles)].copy()
+        for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+            if col_c in df_tasks.columns:
+                matched = df_tasks[df_tasks[col_c].astype(str).str.strip().isin(match_cycles)].copy()
+                if not matched.empty:
+                    q_t = matched
+                    break
+
+    if q_t.empty and date_col and date_col in df_tasks.columns:
+        t_dates = DataNormalizer.parse_datetime_safely(df_tasks[date_col]).dt.date
+        if q_name == 'Q2-2026':
+            q_t = df_tasks[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+        elif q_name == 'Q2-2025':
+            q_t = df_tasks[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+        elif q_name == 'Q4-2026':
+            q_t = df_tasks[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+        elif q_name == 'Q4-2025':
+            q_t = df_tasks[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
 
     # Impute due_date with exact window end date (23:59:59)
     window_deadline = pd.to_datetime(f"{e_date} 23:59:59")
@@ -545,13 +594,13 @@ if page == "📊 Executive Overview":
     diff_records = c_records - p_records
 
     # 2. Completion Rate
-    c_comp = float(k1.get('value', 97.0))
-    p_comp = float(prev_kpis.get('kpi_1_certification_completion', {}).get('value', 95.0)) if prev_kpis else 0.0
+    c_comp = safe_float(k1.get('value'), 0.0)
+    p_comp = safe_float(prev_kpis.get('kpi_1_certification_completion', {}).get('value'), 0.0) if prev_kpis else 0.0
     diff_comp = c_comp - p_comp
 
     # 3. SLA Achievement
-    c_sla = float(k12.get('value', 95.0)) if k12.get('value') is not None else 95.0
-    p_sla = float(prev_kpis.get('kpi_12_sla_achievement', {}).get('value', 91.0)) if prev_kpis and prev_kpis.get('kpi_12_sla_achievement', {}).get('value') is not None else 0.0
+    c_sla = safe_float(k12.get('value'), 0.0)
+    p_sla = safe_float(prev_kpis.get('kpi_12_sla_achievement', {}).get('value'), 0.0) if prev_kpis else 0.0
     diff_sla = c_sla - p_sla
 
     # 4. Discrepancies Identified
@@ -568,8 +617,8 @@ if page == "📊 Executive Overview":
     diff_disc_closed_pct = round(c_disc_closed_pct - p_disc_closed_pct, 1)
 
     # 6. Average Closure Time
-    c_time = float(k4.get('value', 5.4)) if k4.get('value') is not None else 5.4
-    p_time = float(prev_kpis.get('kpi_4_avg_completion_time', {}).get('value', 6.9)) if prev_kpis.get('kpi_4_avg_completion_time', {}).get('value') is not None else 6.9
+    c_time = safe_float(k4.get('value'), 0.0)
+    p_time = safe_float(prev_kpis.get('kpi_4_avg_completion_time', {}).get('value'), 0.0) if prev_kpis else 0.0
     diff_time = round(c_time - p_time, 1)
 
     exec_summary_table = pd.DataFrame([

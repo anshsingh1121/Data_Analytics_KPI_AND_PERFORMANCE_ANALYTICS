@@ -101,18 +101,43 @@ class CycleManager:
             if cand in df.columns:
                 col_to_use = cand
                 break
+
+        # Check for explicit activity or cycle column
+        act_col = None
+        for cand_act in ['u_certification_activity', 'u_certification_cycle', 'certification_activity']:
+            if cand_act in df.columns:
+                act_col = cand_act
+                break
+
+        activity_map = {
+            'Q1-2026': 'Q2-2026', 'Q1_2026': 'Q2-2026', 'Q1 2026': 'Q2-2026', '2026-Q1': 'Q2-2026',
+            'Q2-2026': 'Q2-2026', 'Q2_2026': 'Q2-2026', 'Q2 2026': 'Q2-2026', '2026-Q2': 'Q2-2026',
+            'Q4-2026': 'Q4-2026', 'Q4_2026': 'Q4-2026', 'Q4 2026': 'Q4-2026', '2026-Q4': 'Q4-2026',
+            'Q1-2025': 'Q2-2025', 'Q1_2025': 'Q2-2025', 'Q1 2025': 'Q2-2025', '2025-Q1': 'Q2-2025',
+            'Q2-2025': 'Q2-2025', 'Q2_2025': 'Q2-2025', 'Q2 2025': 'Q2-2025', '2025-Q2': 'Q2-2025',
+            'Q4-2025': 'Q4-2025', 'Q4_2025': 'Q4-2025', 'Q4 2025': 'Q4-2025', '2025-Q4': 'Q4-2025',
+        }
                 
         if not col_to_use:
-            df['certification_cycle'] = 'Q4-2026'
+            if act_col:
+                df['certification_cycle'] = df[act_col].astype(str).str.strip().map(activity_map).fillna('Q4-2026')
+            else:
+                df['certification_cycle'] = 'Q4-2026'
             return df
             
         dt_series = DataNormalizer.parse_datetime_safely(df[col_to_use])
         if hasattr(dt_series.dt, 'tz') and dt_series.dt.tz is not None:
             dt_series = dt_series.dt.tz_localize(None)
 
-        def _match_cycle(ts):
+        def _match_cycle(ts, act_val=None):
             if pd.isna(ts):
+                # If date is missing, fall back to activity tag if available
+                if act_val and pd.notna(act_val):
+                    act_clean = str(act_val).strip()
+                    if act_clean in activity_map:
+                        return activity_map[act_clean]
                 return 'Unknown'
+
             d = ts.date() if hasattr(ts, 'date') else ts
 
             # Strict non-overlapping campaign windows:
@@ -140,11 +165,19 @@ class CycleManager:
                     if s <= d <= e:
                         return c_name
 
-            # STRICT: Any task outside the defined campaign dates is Out of Campaign.
-            # NO 3-month calendar fallbacks!
+            # If date is outside campaign window, check explicit activity tag before marking out of campaign
+            if act_val and pd.notna(act_val):
+                act_clean = str(act_val).strip()
+                if act_clean in activity_map:
+                    return activity_map[act_clean]
+
+            # STRICT: Any task outside defined campaign dates with no matching activity is Out of Campaign.
             return 'Out of Campaign'
 
-        df['certification_cycle'] = dt_series.apply(_match_cycle)
+        if act_col:
+            df['certification_cycle'] = [_match_cycle(ts, act) for ts, act in zip(dt_series, df[act_col])]
+        else:
+            df['certification_cycle'] = dt_series.apply(_match_cycle)
         return df
 
     def calculate_working_days(self, start_date: Any, end_date: Any) -> int:

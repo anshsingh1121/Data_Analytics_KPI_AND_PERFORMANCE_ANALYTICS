@@ -142,14 +142,23 @@ def main():
     q2_deadline = pd.to_datetime(q2_meta.get('final_deadline') or f"{q2_end} 23:59:59")
     q2_working_days = cycle_mgr.calculate_working_days(q2_meta.get('start_date'), q2_meta.get('end_date')) if (q2_meta.get('start_date') and q2_meta.get('end_date')) else 14
 
-    # Filter Q2-2026 tasks by campaign dates or cycle tag
+    # Filter Q2-2026 tasks by campaign dates or cycle tag (3-tier resolution)
     date_col = 'sys_created_on' if 'sys_created_on' in df.columns else None
     q2_tasks = pd.DataFrame()
     if date_col and q2_start and q2_end:
         t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
         q2_tasks = df[(t_dates >= q2_start) & (t_dates <= q2_end)].copy()
     if q2_tasks.empty:
-        q2_tasks = df[df['certification_cycle'] == 'Q2-2026'].copy()
+        q2_aliases = ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1']
+        for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+            if col_c in df.columns:
+                matched = df[df[col_c].astype(str).str.strip().isin(q2_aliases)].copy()
+                if not matched.empty:
+                    q2_tasks = matched
+                    break
+    if q2_tasks.empty and date_col:
+        t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
+        q2_tasks = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
 
     # Calculate exact KPIs using KPIEngine directly on corporate data
     q2_kpis = kpi_engine.calculate_all_kpis(
@@ -206,9 +215,33 @@ def main():
             t_dates = pd.to_datetime(df['sys_created_on'], errors='coerce').dt.date
             c_df = df[(t_dates >= s_d) & (t_dates <= e_d)].copy()
         
-        # Priority 2: Fallback to cycle activity tags only if date filter yielded 0 records
+        # Priority 2: Fallback to cycle activity tags across columns
         if c_df.empty:
-            c_df = df[df['certification_cycle'] == c_name].copy()
+            alias_map = {
+                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
+                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
+                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
+                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
+            }
+            match_cycles = alias_map.get(c_name, [c_name])
+            for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
+                if col_c in df.columns:
+                    matched = df[df[col_c].astype(str).str.strip().isin(match_cycles)].copy()
+                    if not matched.empty:
+                        c_df = matched
+                        break
+
+        # Priority 3: Fallback for Spring/Autumn season window
+        if c_df.empty and 'sys_created_on' in df.columns:
+            t_dates = pd.to_datetime(df['sys_created_on'], errors='coerce').dt.date
+            if c_name == 'Q2-2026':
+                c_df = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+            elif c_name == 'Q2-2025':
+                c_df = df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+            elif c_name == 'Q4-2026':
+                c_df = df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+            elif c_name == 'Q4-2025':
+                c_df = df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
 
         tot = len(c_df)
         c_closed = c_df[c_df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | c_df['closed_at'].notna()]

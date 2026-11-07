@@ -465,10 +465,10 @@ def cmd_pipeline(args):
         kpi_engine = KPIEngine(loader.get_kpi_config(), cycle_cfg)
 
         alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026'],
-            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026'],
-            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025'],
-            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025']
+            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
+            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
+            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
+            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
         }
 
         for q_name in target_quarters:
@@ -484,15 +484,27 @@ def cmd_pipeline(args):
                 t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
                 q_tasks = tasks_resolved[(t_dates >= s_date) & (t_dates <= e_date)].copy()
             
-            # Exact cycle activity tag match if date filter gave 0 records
+            # Priority 2: Exact cycle activity tag match if date filter gave 0 records
             if q_tasks.empty:
                 match_cycles = alias_map.get(q_name, [q_name])
                 for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
                     if col_c in tasks_resolved.columns:
-                        matched = tasks_resolved[tasks_resolved[col_c].isin(match_cycles)].copy()
+                        matched = tasks_resolved[tasks_resolved[col_c].astype(str).str.strip().isin(match_cycles)].copy()
                         if not matched.empty:
                             q_tasks = matched
                             break
+
+            # Priority 3: Fallback to broader campaign season window if still 0 records
+            if q_tasks.empty and date_col and date_col in tasks_resolved.columns:
+                t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
+                if q_name == 'Q2-2026':
+                    q_tasks = tasks_resolved[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+                elif q_name == 'Q2-2025':
+                    q_tasks = tasks_resolved[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+                elif q_name == 'Q4-2026':
+                    q_tasks = tasks_resolved[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+                elif q_name == 'Q4-2025':
+                    q_tasks = tasks_resolved[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
 
             due_deadline = pd.to_datetime(f"{e_date} 23:59:59") if e_date else None
             if not q_tasks.empty and due_deadline:
