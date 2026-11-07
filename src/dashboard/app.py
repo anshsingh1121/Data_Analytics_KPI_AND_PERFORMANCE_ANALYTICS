@@ -18,6 +18,7 @@ from src.analytics.kpi_engine import KPIEngine
 from src.analytics.cycle_manager import CycleManager
 from src.analytics.trend_analysis import TrendAnalyzer
 from src.reporting.report_generator import ReportGenerator
+from src.data_processing.normalizer import DataNormalizer
 
 # -----------------------------------------------------------------------------
 # Streamlit App Configuration
@@ -83,6 +84,14 @@ def load_processed_data():
         tasks = pd.read_csv(tasks_path)
         disc = pd.read_csv(disc_path) if disc_path.exists() else pd.DataFrame()
 
+        # Parse date columns safely to guarantee day and month are NEVER interchanged
+        date_cols = ['sys_created_on', 'sys_updated_on', 'due_date', 'closed_at', 'u_resolved_on', 'u_resolved_at']
+        for col in date_cols:
+            if col in tasks.columns:
+                tasks[col] = DataNormalizer.parse_datetime_safely(tasks[col])
+            if disc is not None and not disc.empty and col in disc.columns:
+                disc[col] = DataNormalizer.parse_datetime_safely(disc[col])
+
         # Ensure consistent campaign window end dates for due_date imputation
         if tasks is not None and not tasks.empty:
             campaign_deadlines = {
@@ -98,7 +107,7 @@ def load_processed_data():
             
             date_col = 'sys_created_on' if 'sys_created_on' in tasks.columns else ('created_at' if 'created_at' in tasks.columns else None)
             if date_col and mapped.isna().any():
-                dates = pd.to_datetime(tasks[date_col], errors='coerce')
+                dates = tasks[date_col]
                 for idx in tasks[mapped.isna()].index:
                     d = dates.loc[idx]
                     if pd.notna(d):
@@ -109,15 +118,14 @@ def load_processed_data():
                         else: mapped.loc[idx] = f"{d.year}-{d.month:02d}-{min(d.day + 14, 28):02d} 23:59:59"
             
             mapped = mapped.fillna('2026-10-23 23:59:59')
-            if 'due_date' not in tasks.columns:
-                tasks['due_date'] = pd.to_datetime(mapped)
+            if 'due_date' not in tasks.columns or tasks['due_date'].isna().all():
+                tasks['due_date'] = DataNormalizer.parse_datetime_safely(mapped)
             else:
-                parsed_due = pd.to_datetime(tasks['due_date'], errors='coerce')
-                tasks['due_date'] = parsed_due.fillna(pd.to_datetime(mapped))
+                tasks['due_date'] = tasks['due_date'].fillna(DataNormalizer.parse_datetime_safely(mapped))
 
             # Defensive clamp: ensure due_date >= sys_created_on across all tasks
             if date_col and date_col in tasks.columns:
-                created_s = pd.to_datetime(tasks[date_col], errors='coerce')
+                created_s = tasks[date_col]
                 bad_due = tasks['due_date'].notna() & created_s.notna() & (tasks['due_date'] < created_s)
                 if bad_due.any():
                     tasks.loc[bad_due, 'due_date'] = created_s.loc[bad_due]
@@ -204,7 +212,7 @@ with st.sidebar:
         if date_col and c_meta.get('start_date') and c_meta.get('end_date'):
             s_date = pd.to_datetime(c_meta['start_date']).date()
             e_date = pd.to_datetime(c_meta['end_date']).date()
-            t_dates = pd.to_datetime(tasks_df[date_col], errors='coerce').dt.date
+            t_dates = DataNormalizer.parse_datetime_safely(tasks_df[date_col]).dt.date
             c_tasks = tasks_df[(t_dates >= s_date) & (t_dates <= e_date)].copy()
         
         # Priority 2: Fallback to exact cycle match only
@@ -286,7 +294,7 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
     
     q_t = pd.DataFrame()
     if date_col and date_col in df_tasks.columns:
-        t_dates = pd.to_datetime(df_tasks[date_col], errors='coerce').dt.date
+        t_dates = DataNormalizer.parse_datetime_safely(df_tasks[date_col]).dt.date
         q_t = df_tasks[(t_dates >= s_date) & (t_dates <= e_date)].copy()
         
     if q_t.empty and q_col in df_tasks.columns:
@@ -305,10 +313,10 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         if 'due_date' not in q_t.columns:
             q_t['due_date'] = window_deadline
         else:
-            q_t['due_date'] = pd.to_datetime(q_t['due_date'], errors='coerce').fillna(window_deadline)
+            q_t['due_date'] = DataNormalizer.parse_datetime_safely(q_t['due_date']).fillna(window_deadline)
         # Defensive clamp: ensure due_date >= sys_created_on
         if date_col and date_col in q_t.columns:
-            q_created = pd.to_datetime(q_t[date_col], errors='coerce')
+            q_created = DataNormalizer.parse_datetime_safely(q_t[date_col])
             bad_q_due = q_t['due_date'].notna() & q_created.notna() & (q_t['due_date'] < q_created)
             if bad_q_due.any():
                 q_t.loc[bad_q_due, 'due_date'] = q_created.loc[bad_q_due]

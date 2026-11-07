@@ -1,6 +1,7 @@
 import logging
 import pandas as pd
 from typing import Dict, Any, Tuple, List
+from src.data_processing.normalizer import DataNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -30,8 +31,8 @@ class DataValidator:
     def check_date_sequences(self, df: pd.DataFrame, start_col: str, end_col: str) -> pd.Series:
         """Validates that start date <= end date for non-null timestamps."""
         if start_col in df.columns and end_col in df.columns:
-            start = pd.to_datetime(df[start_col], errors='coerce')
-            end = pd.to_datetime(df[end_col], errors='coerce')
+            start = DataNormalizer.parse_datetime_safely(df[start_col])
+            end = DataNormalizer.parse_datetime_safely(df[end_col])
             return start.notna() & end.notna() & (start > end)
         return pd.Series(False, index=df.index)
 

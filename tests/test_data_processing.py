@@ -60,3 +60,59 @@ def test_quality_checks():
     disc = pd.DataFrame()
     report = checker.run_checks(tasks, disc)
     assert report['task_data_completeness']['overall_score'] == 75.0 # sys_id 100%, state 50%
+
+def test_parse_datetime_safely_dd_mm_yyyy():
+    """Verify DD/MM/YYYY dates never have day and month swapped."""
+    # 05/01/2026 alongside 22/05/2026 (day 22 forces dayfirst=True)
+    s = pd.Series(['05/01/2026', '22/05/2026', '12/10/2026'])
+    parsed = DataNormalizer.parse_datetime_safely(s)
+    # 05/01/2026 must be January 5th, NOT May 1st
+    assert parsed.iloc[0].month == 1
+    assert parsed.iloc[0].day == 5
+    assert parsed.iloc[0].year == 2026
+    # 22/05/2026 must be May 22nd
+    assert parsed.iloc[1].month == 5
+    assert parsed.iloc[1].day == 22
+    assert parsed.iloc[1].year == 2026
+
+def test_parse_datetime_safely_mm_dd_yyyy():
+    """Verify MM/DD/YYYY dates parse correctly when month is first."""
+    # 01/05/2026 alongside 05/22/2026 (token 2 is 22, forcing dayfirst=False)
+    s = pd.Series(['01/05/2026', '05/22/2026', '10/12/2026'])
+    parsed = DataNormalizer.parse_datetime_safely(s)
+    # 01/05/2026 is January 5th
+    assert parsed.iloc[0].month == 1
+    assert parsed.iloc[0].day == 5
+    # 05/22/2026 is May 22nd
+    assert parsed.iloc[1].month == 5
+    assert parsed.iloc[1].day == 22
+
+def test_parse_datetime_safely_iso_canonical():
+    """Verify ISO strings are parsed unambiguously without any swapping."""
+    s = pd.Series(['2026-01-05 10:00:00', '2026-05-22 23:59:59'])
+    parsed = DataNormalizer.parse_datetime_safely(s)
+    assert parsed.iloc[0].month == 1
+    assert parsed.iloc[0].day == 5
+    assert parsed.iloc[1].month == 5
+    assert parsed.iloc[1].day == 22
+
+def test_servicenow_client_flattens_canonical_value_for_dates():
+    """Verify ServiceNowClient extracts raw UTC value for dates, preventing regional display_value swapping."""
+    from src.connectors.service_now_client import ServiceNowClient
+    client = ServiceNowClient(instance_url="https://mock.service-now.com", username="admin", password="password")
+    raw_rec = {
+        'sys_id': {'display_value': 'sys_001', 'value': 'sys_001'},
+        'sys_created_on': {
+            'display_value': '05/01/2026 14:30:00',
+            'value': '2026-01-05 09:00:00'
+        },
+        'due_date': {
+            'display_value': '22/05/2026 23:59:59',
+            'value': '2026-05-22 18:29:59'
+        },
+        'state': {'display_value': 'Closed Complete', 'value': '3'}
+    }
+    flattened = client._flatten_record(raw_rec)
+    assert flattened['sys_created_on'] == '2026-01-05 09:00:00'
+    assert flattened['due_date'] == '2026-05-22 18:29:59'
+    assert flattened['state'] == 'Closed Complete'

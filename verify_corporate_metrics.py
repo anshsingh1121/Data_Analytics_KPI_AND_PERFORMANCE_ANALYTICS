@@ -29,6 +29,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from src.config.loader import ConfigLoader
 from src.analytics.cycle_manager import CycleManager
 from src.analytics.kpi_engine import KPIEngine
+from src.data_processing.normalizer import DataNormalizer
 
 def main():
     parser = argparse.ArgumentParser(description="Corporate ServiceNow Verification & Leadership Audit")
@@ -56,8 +57,6 @@ def main():
         print(f"[LIVE MODE] Connecting to ServiceNow instance: {api_cfg['base_url']}...")
         from main import get_service_now_client
         from src.extraction.task_extractor import TaskExtractor
-        from src.data_processing.normalizer import DataNormalizer
-
         client = get_service_now_client(loader)
         field_map = loader.get_field_mapping()
         t_ext = TaskExtractor(client, loader.settings.get('provider', {}), field_map.get('tables', {}).get('cert_task', {}).get('mappings', {}))
@@ -97,10 +96,10 @@ def main():
         print(f"[OK] Total records loaded: {len(df):,}")
     kpi_engine = KPIEngine(kpi_cfg, cycle_cfg)
 
-    # Parse timestamps
-    for col in ['sys_created_on', 'closed_at', 'due_date']:
+    # Parse timestamps safely ensuring day and month are never interchanged
+    for col in ['sys_created_on', 'closed_at', 'due_date', 'u_resolved_on']:
         if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors='coerce')
+            df[col] = DataNormalizer.parse_datetime_safely(df[col])
 
     # Ensure certification_cycle
     if 'certification_cycle' not in df.columns:

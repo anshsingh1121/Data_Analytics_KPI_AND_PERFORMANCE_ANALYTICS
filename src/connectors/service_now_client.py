@@ -95,14 +95,25 @@ class ServiceNowClient(ApiClient):
     def _flatten_record(self, rec: Dict[str, Any]) -> Dict[str, Any]:
         """Flattens a ServiceNow display_value='all' record to scalar values."""
         flat = {}
+        date_field_names = {
+            'sys_created_on', 'sys_updated_on', 'closed_at', 'opened_at',
+            'due_date', 'u_due_date', 'u_resolved_on', 'u_resolved_at',
+            'resolved_at', 'u_end_of_life_date', 'work_start', 'work_end'
+        }
         for k, v in rec.items():
             if isinstance(v, dict):
+                # For date/time fields, ALWAYS extract raw canonical ISO UTC timestamp (value)
+                # to strictly prevent regional user-profile date format swapping (e.g. DD/MM vs MM/DD)
+                is_date = k in date_field_names or k.endswith('_on') or k.endswith('_at') or k.endswith('_date') or k.endswith('_time')
+                raw_val = v.get('value')
+                if is_date and raw_val is not None and str(raw_val).strip() != '':
+                    flat[k] = raw_val
                 # For primary keys and foreign keys, retain raw value
-                if k in ('sys_id', 'u_certification_task') or k.endswith('_sys_id'):
-                    flat[k] = v.get('value', v.get('display_value', ''))
+                elif k in ('sys_id', 'u_certification_task') or k.endswith('_sys_id'):
+                    flat[k] = raw_val if raw_val is not None else v.get('display_value', '')
                 else:
                     disp = v.get('display_value')
-                    flat[k] = disp if (disp is not None and disp != '') else v.get('value')
+                    flat[k] = disp if (disp is not None and disp != '') else raw_val
             else:
                 flat[k] = v
         return flat

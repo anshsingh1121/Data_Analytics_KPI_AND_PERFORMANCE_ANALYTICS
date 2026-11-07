@@ -401,7 +401,7 @@ def cmd_pipeline(args):
         
         date_col = 'sys_created_on' if 'sys_created_on' in tasks_resolved.columns else ('created_at' if 'created_at' in tasks_resolved.columns else None)
         if date_col and mapped_deadlines.isna().any():
-            dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce')
+            dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col])
             for idx in tasks_resolved[mapped_deadlines.isna()].index:
                 d = dates.loc[idx]
                 if pd.notna(d):
@@ -413,14 +413,14 @@ def cmd_pipeline(args):
         
         mapped_deadlines = mapped_deadlines.fillna('2026-10-23 23:59:59')
         if 'due_date' not in tasks_resolved.columns:
-            tasks_resolved['due_date'] = pd.to_datetime(mapped_deadlines)
+            tasks_resolved['due_date'] = DataNormalizer.parse_datetime_safely(mapped_deadlines)
         else:
-            parsed_due = pd.to_datetime(tasks_resolved['due_date'], errors='coerce')
-            tasks_resolved['due_date'] = parsed_due.fillna(pd.to_datetime(mapped_deadlines))
+            parsed_due = DataNormalizer.parse_datetime_safely(tasks_resolved['due_date'])
+            tasks_resolved['due_date'] = parsed_due.fillna(DataNormalizer.parse_datetime_safely(mapped_deadlines))
 
         # Defensive check: Ensure due_date >= sys_created_on across all tasks
         if date_col and date_col in tasks_resolved.columns:
-            created_s = pd.to_datetime(tasks_resolved[date_col], errors='coerce')
+            created_s = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col])
             bad_due_mask = tasks_resolved['due_date'].notna() & created_s.notna() & (tasks_resolved['due_date'] < created_s)
             if bad_due_mask.any():
                 logger.warning(f"Detected {bad_due_mask.sum()} tasks with due_date < sys_created_on. Clamping due_date to sys_created_on.")
@@ -479,7 +479,7 @@ def cmd_pipeline(args):
             q_tasks = pd.DataFrame()
             # Priority 1: Filter directly by configured campaign dates on task creation date
             if date_col and s_date and e_date:
-                t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
+                t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
                 q_tasks = tasks_resolved[(t_dates >= s_date) & (t_dates <= e_date)].copy()
             
             # Priority 2: Fallback to cycle activity tag if date filter gave 0 records
@@ -503,7 +503,7 @@ def cmd_pipeline(args):
                     'Q4': (date(yr, 10, 1), date(yr, 12, 31))
                 }
                 cal_s, cal_e = cal_bounds.get(q_num, (s_date, e_date))
-                all_t_dates = pd.to_datetime(tasks_resolved[date_col], errors='coerce').dt.date
+                all_t_dates = DataNormalizer.parse_datetime_safely(tasks_resolved[date_col]).dt.date
                 cal_filtered = tasks_resolved[(all_t_dates >= cal_s) & (all_t_dates <= cal_e)].copy()
                 if not cal_filtered.empty:
                     q_tasks = cal_filtered
@@ -517,10 +517,10 @@ def cmd_pipeline(args):
                 if 'due_date' not in q_tasks.columns:
                     q_tasks['due_date'] = due_deadline
                 else:
-                    q_tasks['due_date'] = pd.to_datetime(q_tasks['due_date'], errors='coerce').fillna(due_deadline)
+                    q_tasks['due_date'] = DataNormalizer.parse_datetime_safely(q_tasks['due_date']).fillna(due_deadline)
                 # Ensure no due_date < sys_created_on in q_tasks
                 if date_col and date_col in q_tasks.columns:
-                    q_created = pd.to_datetime(q_tasks[date_col], errors='coerce')
+                    q_created = DataNormalizer.parse_datetime_safely(q_tasks[date_col])
                     bad_q_due = q_tasks['due_date'].notna() & q_created.notna() & (q_tasks['due_date'] < q_created)
                     if bad_q_due.any():
                         q_tasks.loc[bad_q_due, 'due_date'] = q_created.loc[bad_q_due]

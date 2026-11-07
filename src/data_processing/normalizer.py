@@ -15,15 +15,70 @@ class DataNormalizer:
         """Renames dataframe columns based on field_mapping."""
         return df.rename(columns=self.field_mapping)
 
+    @staticmethod
+    def parse_datetime_safely(series: pd.Series) -> pd.Series:
+        """
+        Parses a date series ensuring day and month are NEVER interchanged.
+        1. If already datetime dtype, strips tz if present and returns.
+        2. If strings start with 4-digit year (YYYY-MM-DD or YYYY/MM/DD), parses as pure ISO (unambiguous).
+        3. If strings are slash/dash separated (DD/MM/YYYY vs MM/DD/YYYY), inspects column tokens:
+           - If any token 1 > 12: day is first (DD/MM/YYYY).
+           - If any token 2 > 12: month is first (MM/DD/YYYY).
+        4. Strips timezone to return timezone-naive datetimes for consistent comparisons.
+        """
+        if series is None or series.empty:
+            return pd.to_datetime(series, errors='coerce')
+
+        if pd.api.types.is_datetime64_any_dtype(series):
+            if hasattr(series.dt, 'tz') and series.dt.tz is not None:
+                return series.dt.tz_localize(None)
+            return series
+
+        clean_s = series.astype(str).str.strip()
+        sample = clean_s[~clean_s.isin(['nan', 'None', '', 'NaT', 'null', 'NULL'])].dropna()
+        if sample.empty:
+            return pd.to_datetime(series, errors='coerce')
+
+        # Pure ISO format: YYYY-MM-DD or YYYY/MM/DD
+        if sample.str.match(r'^\d{4}[-/]\d{1,2}[-/]\d{1,2}').all():
+            res = pd.to_datetime(series, errors='coerce', format='mixed')
+            if hasattr(res.dt, 'tz') and res.dt.tz is not None:
+                res = res.dt.tz_localize(None)
+            return res
+
+        # Check for DD/MM/YYYY vs MM/DD/YYYY using token boundary inspection
+        tokens = sample.str.extract(r'^(\d{1,2})[-/](\d{1,2})[-/](\d{2,4})')
+        if not tokens.dropna().empty:
+            t1_max = pd.to_numeric(tokens[0], errors='coerce').max()
+            t2_max = pd.to_numeric(tokens[1], errors='coerce').max()
+            if t1_max > 12 and t2_max <= 12:
+                # Definitely DD/MM/YYYY
+                res = pd.to_datetime(series, errors='coerce', dayfirst=True)
+                if hasattr(res.dt, 'tz') and res.dt.tz is not None:
+                    res = res.dt.tz_localize(None)
+                return res
+            elif t2_max > 12 and t1_max <= 12:
+                # Definitely MM/DD/YYYY
+                res = pd.to_datetime(series, errors='coerce', dayfirst=False)
+                if hasattr(res.dt, 'tz') and res.dt.tz is not None:
+                    res = res.dt.tz_localize(None)
+                return res
+
+        res = pd.to_datetime(series, errors='coerce', format='mixed')
+        if hasattr(res.dt, 'tz') and res.dt.tz is not None:
+            res = res.dt.tz_localize(None)
+        return res
+
     def standardize_timestamps(self, df: pd.DataFrame, date_cols: List[str]) -> pd.DataFrame:
         """Parses and standardizes timestamp formats, converting to configured timezone."""
         for col in date_cols:
             if col in df.columns:
                 try:
-                    df[col] = pd.to_datetime(df[col], errors='coerce', utc=True, format='mixed')
+                    parsed = self.parse_datetime_safely(df[col])
                     if self.tz_config != "UTC":
-                        df[col] = df[col].dt.tz_convert(self.tz_config)
-                    df[col] = df[col].dt.tz_localize(None)
+                        df[col] = parsed.dt.tz_localize('UTC').dt.tz_convert(self.tz_config).dt.tz_localize(None)
+                    else:
+                        df[col] = parsed
                 except Exception as e:
                     logger.error(f"Error converting column {col} to datetime: {e}")
         return df

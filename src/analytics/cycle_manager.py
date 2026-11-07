@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, Optional, List, Tuple
 from datetime import datetime, date
+from src.data_processing.normalizer import DataNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class CycleManager:
             df['certification_cycle'] = 'Q4-2026'
             return df
             
-        dt_series = pd.to_datetime(df[col_to_use], errors='coerce')
+        dt_series = DataNormalizer.parse_datetime_safely(df[col_to_use])
         if hasattr(dt_series.dt, 'tz') and dt_series.dt.tz is not None:
             dt_series = dt_series.dt.tz_localize(None)
 

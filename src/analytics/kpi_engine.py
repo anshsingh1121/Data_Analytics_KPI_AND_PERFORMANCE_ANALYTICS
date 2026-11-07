@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 from typing import Dict, Any, List, Optional
 from datetime import datetime, timezone
+from src.data_processing.normalizer import DataNormalizer
 
 logger = logging.getLogger(__name__)
 
@@ -20,10 +21,7 @@ class KPIEngine:
     def _to_dt(self, val: Any) -> Any:
         """Converts scalar or series to naive datetime for clean arithmetic."""
         if isinstance(val, pd.Series):
-            s = pd.to_datetime(val, errors='coerce')
-            if hasattr(s.dt, 'tz') and s.dt.tz is not None:
-                return s.dt.tz_localize(None)
-            return s
+            return DataNormalizer.parse_datetime_safely(val)
         elif val is not None:
             ts = pd.to_datetime(val)
             if hasattr(ts, 'tzinfo') and ts.tzinfo is not None:
