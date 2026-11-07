@@ -451,8 +451,8 @@ def main():
         if 'closed_at' in df.columns:
             is_closed_all = is_closed_all | df['closed_at'].notna()
 
-        q2_mask = df[cycle_col_all].isin(['Q2-2026', 'Q1-2026']) if cycle_col_all else pd.Series(True, index=df.index)
-        q4_mask = df[cycle_col_all].isin(['Q4-2026']) if cycle_col_all else pd.Series(True, index=df.index)
+        q2_mask = (df[cycle_col_all] == 'Q2-2026') if cycle_col_all else pd.Series(True, index=df.index)
+        q4_mask = (df[cycle_col_all] == 'Q4-2026') if cycle_col_all else pd.Series(True, index=df.index)
 
         q2_closed_tasks = df[q2_mask & is_closed_all]
         q4_closed_tasks = df[q4_mask & is_closed_all]

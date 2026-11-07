@@ -151,9 +151,9 @@ Campaign cycles are strictly bounded by configured business dates:
 | Campaign Quarter | Season | Official Date Range | Working Days | Default Due Deadline |
 | :---: | :---: | :---: | :---: | :---: |
 | **Q4 2026** | Autumn | **Oct 5, 2026 – Oct 23, 2026** | 15 Working Days | `2026-10-23 23:59:59` |
-| **Q2 2026 (Q1 Spring)** | Spring | **May 5, 2026 – May 22, 2026** | 14 Working Days | `2026-05-22 23:59:59` |
+| **Q2 2026** | Spring | **May 5, 2026 – May 22, 2026** | 14 Working Days | `2026-05-22 23:59:59` |
 | **Q4 2025** | Autumn | **Oct 6, 2025 – Oct 23, 2025** | 14 Working Days | `2025-10-23 23:59:59` |
-| **Q2 2025 (Q1 Spring)** | Spring | **Apr 7, 2025 – Apr 25, 2025** | 15 Working Days | `2025-04-25 23:59:59` |
+| **Q2 2025** | Spring | **Apr 7, 2025 – Apr 25, 2025** | 15 Working Days | `2025-04-25 23:59:59` |
 
 #### Strict Campaign Window Filtering (No 3-Month Calendar Fallbacks):
 When assigning tasks to a quarter or filtering during pipeline execution, the pipeline strictly respects configured dates:

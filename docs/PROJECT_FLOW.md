@@ -79,10 +79,10 @@ The system strictly validates records against these business campaign date range
 
 - **2026 Campaigns:**
   - **Q4 2026:** Oct 5, 2026 – Oct 23, 2026 (15 working days)
-  - **Q1 2026:** May 5, 2026 – May 22, 2026 (14 working days)
+  - **Q2 2026:** May 5, 2026 – May 22, 2026 (14 working days)
 - **2025 Campaigns:**
   - **Q4 2025:** Oct 6, 2025 – Oct 23, 2025 (14 working days)
-  - **Q1 2025:** Apr 7, 2025 – Apr 25, 2025 (15 working days)
+  - **Q2 2025:** Apr 7, 2025 – Apr 25, 2025 (15 working days)
 
 ---
 
@@ -109,8 +109,8 @@ The system strictly validates records against these business campaign date range
 
 The Streamlit dashboard (`http://localhost:8501`) contains 11 dedicated pages:
 1. **Executive Overview:** 5 headline KPI cards, completion progress bar, daily closure burn-down, and priority risks.
-2. **2026: Q1 vs Q4 Comparison:** Dedicated single-page matrix comparing May 2026 vs October 2026 campaigns.
-3. **2025: Q1 vs Q4 Comparison:** Dedicated single-page matrix comparing April 2025 vs October 2025 campaigns.
+2. **2026: Q2 vs Q4 Comparison:** Dedicated single-page matrix comparing May 2026 vs October 2026 campaigns.
+3. **2025: Q2 vs Q4 Comparison:** Dedicated single-page matrix comparing April 2025 vs October 2025 campaigns.
 4. **All-Quarters Overview:** Complete multi-quarter comparison tracking table across 2025 and 2026.
 5. **Certifier Productivity (Worst Performers):** Ranked roster (`#1, #2, #3...`) identifying certifiers with longest completion times and high open backlogs.
 6. **Backlog & SLA Monitoring:** Aging bucket breakdown (`0-4d`, `5-9d`, `10-14d`, `15+d`), urgent deadline tasks (≤1d), and overdue escalations.

@@ -172,7 +172,7 @@ To connect the application to an active ServiceNow instance:
 | `python main.py validate-config` | Verifies YAML syntax, non-overlapping dates, and field mappings |
 | `python main.py test-connection` | Validates API connectivity, authentication, and table access |
 | `python main.py discover-schema` | Inspects remote dictionary and samples table fields |
-| `python main.py generate-demo` | Generates 10,200 synthetic tasks across Q3 and Q4 cycles |
+| `python main.py generate-demo` | Generates synthetic tasks across Q2 and Q4 (2025 & 2026) cycles |
 | `python main.py pipeline --mode demo` | Runs full processing, KPI calculation, and exports in demo mode |
 | `python main.py pipeline --mode live` | Runs extraction against live ServiceNow API and produces reports |
 | `python main.py compare-cycles` | Computes percentage point and percentage differences between cycles |
@@ -188,7 +188,7 @@ To connect the application to an active ServiceNow instance:
 After running the pipeline, reports are saved to `reports/`:
 - **`Data_Certification_KPI_Report_latest.xlsx`**: Consolidated multi-sheet Excel workbook with Management Summary, All KPIs, Cycle Comparison, Daily Trends, Backlog Analysis, Discrepancies, Certifier Productivity, Exception Resolution, and Data Quality.
 - **`kpi_summary.csv`**: All 12 KPIs with formulas, numerators, denominators, and status.
-- **`cycle_comparison.csv`**: Like-for-like and final outcome comparison between Q3 and Q4.
+- **`cycle_comparison.csv`**: Like-for-like and final outcome comparison between active campaigns (Q2 vs Q4).
 - **`daily_trends.csv`**: Day-by-day closures, cumulative count, and 7-day moving average.
 - **`backlog_analysis.csv`**: Open task list, age in days, aging bucket, and overdue flag.
 - **`discrepancy_analysis.csv`**: Failure categories, resolved counts, and resolution rates.
