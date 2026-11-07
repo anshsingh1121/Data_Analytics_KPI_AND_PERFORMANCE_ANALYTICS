@@ -117,10 +117,20 @@ def main():
                 if c_name and c_deadline:
                     cycle_deadlines[c_name] = pd.to_datetime(c_deadline)
 
+    # Ensure valid due dates and prevent due_date < sys_created_on
     if 'due_date' not in df.columns or df['due_date'].isna().all():
         df['due_date'] = df['certification_cycle'].map(cycle_deadlines)
     else:
         df['due_date'] = df['due_date'].fillna(df['certification_cycle'].map(cycle_deadlines))
+
+    # Defensive check: If due_date < sys_created_on (e.g. from ServiceNow schedule misconfiguration,
+    # DD/MM parsing inversion, or late creation), clamp due_date to at least sys_created_on
+    if 'due_date' in df.columns and 'sys_created_on' in df.columns:
+        bad_due_mask = df['due_date'].notna() & df['sys_created_on'].notna() & (df['due_date'] < df['sys_created_on'])
+        if bad_due_mask.any():
+            n_bad = bad_due_mask.sum()
+            print(f"[DATA QUALITY WARNING] Found {n_bad:,} records with due_date < sys_created_on (e.g. schedule anomaly or date format inversion). Clamping due_date to sys_created_on.")
+            df.loc[bad_due_mask, 'due_date'] = df.loc[bad_due_mask, 'sys_created_on']
 
     print("\n" + "=" * 80)
     print("QUESTION 1: Q2-2026 SLA ACHIEVEMENT VS COMPLETION RATE AUDIT")
@@ -188,12 +198,18 @@ def main():
 
     for c_name in cycles:
         meta = cycle_mgr.get_cycle_metadata(cycle_mgr.get_cycle_by_name(c_name))
-        c_df = df[df['certification_cycle'].isin([c_name, f"Q1-{c_name.split('-')[1]}"])].copy()
-        if c_df.empty and 'sys_created_on' in df.columns:
-            s_d = pd.to_datetime(meta.get('start_date')).date() if meta.get('start_date') else None
-            e_d = pd.to_datetime(meta.get('end_date')).date() if meta.get('end_date') else None
-            if s_d and e_d:
-                c_df = df[(df['sys_created_on'].dt.date >= s_d) & (df['sys_created_on'].dt.date <= e_d)].copy()
+        s_d = pd.to_datetime(meta.get('start_date')).date() if meta.get('start_date') else None
+        e_d = pd.to_datetime(meta.get('end_date')).date() if meta.get('end_date') else None
+        
+        # Priority 1: Strict Campaign Date Range Filter (Prevents January/out-of-window tasks from leaking into Q2)
+        c_df = pd.DataFrame()
+        if 'sys_created_on' in df.columns and s_d and e_d:
+            t_dates = pd.to_datetime(df['sys_created_on'], errors='coerce').dt.date
+            c_df = df[(t_dates >= s_d) & (t_dates <= e_d)].copy()
+        
+        # Priority 2: Fallback to cycle activity tags only if date filter yielded 0 records
+        if c_df.empty:
+            c_df = df[df['certification_cycle'].isin([c_name, f"Q1-{c_name.split('-')[1]}"])].copy()
 
         tot = len(c_df)
         c_closed = c_df[c_df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | c_df['closed_at'].notna()]
