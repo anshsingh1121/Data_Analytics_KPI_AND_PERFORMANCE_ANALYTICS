@@ -118,35 +118,35 @@ def test_servicenow_client_flattens_canonical_value_for_dates():
     assert flattened['state'] == 'Closed Complete'
 
 def test_strict_campaign_window_boundaries_no_calendar_fallback():
-    """Verify cycle assignment strictly follows official campaign dates without 3-month fallbacks."""
+    """Verify cycle assignment supports 3-month quarter windows (Apr-Jun for Q2, Oct-Dec for Q4) but strictly excludes January."""
     from src.analytics.cycle_manager import CycleManager
     cycle_mgr = CycleManager({})
     df = pd.DataFrame({
         'sys_created_on': [
-            '2026-05-04', # Day before Q2 -> Out of Campaign
-            '2026-05-05', # First day Q2 -> Q2-2026
-            '2026-05-22', # Last day Q2 -> Q2-2026
-            '2026-05-23', # Day after Q2 -> Out of Campaign
-            '2026-01-15', # January -> Out of Campaign (NEVER Q1/Q2)
-            '2026-06-15', # June -> Out of Campaign (NEVER Q2)
-            '2026-10-04', # Day before Q4 -> Out of Campaign
-            '2026-10-05', # First day Q4 -> Q4-2026
-            '2026-10-23', # Last day Q4 -> Q4-2026
-            '2026-10-24', # Day after Q4 -> Out of Campaign
+            '2026-04-15', # April -> Q2-2026 (Spring 3-month window)
+            '2026-05-05', # Official campaign Q2 -> Q2-2026
+            '2026-05-22', # Official campaign Q2 -> Q2-2026
+            '2026-06-15', # June -> Q2-2026 (Spring 3-month window)
+            '2026-01-15', # January -> Out of Campaign (STRICTLY NEVER Q1/Q2)
+            '2026-02-10', # February -> Out of Campaign
+            '2026-07-04', # July -> Out of Campaign
+            '2026-10-05', # Official campaign Q4 -> Q4-2026
+            '2026-11-20', # November -> Q4-2026 (Autumn 3-month window)
+            '2026-12-25', # December -> Q4-2026 (Autumn 3-month window)
         ]
     })
     res = cycle_mgr.assign_cycle_to_dataframe(df)
     expected = [
-        'Out of Campaign',
+        'Q2-2026',
+        'Q2-2026',
         'Q2-2026',
         'Q2-2026',
         'Out of Campaign',
         'Out of Campaign',
         'Out of Campaign',
-        'Out of Campaign',
         'Q4-2026',
         'Q4-2026',
-        'Out of Campaign'
+        'Q4-2026'
     ]
     assert list(res['certification_cycle']) == expected
 

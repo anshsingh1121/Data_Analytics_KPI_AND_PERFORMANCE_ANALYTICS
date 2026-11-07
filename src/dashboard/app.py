@@ -235,10 +235,10 @@ with st.sidebar:
         # Priority 2: Fallback to exact cycle / activity match across all possible column names
         if c_tasks.empty:
             alias_map = {
-                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
-                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
-                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
-                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
+                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', '2026-Q2', 'Q2'],
+                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4', 'Q4'],
+                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', '2025-Q2', 'Q2'],
+                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4', 'Q4']
             }
             filter_cycles = alias_map.get(selected_cycle, [selected_cycle])
             for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
@@ -248,17 +248,17 @@ with st.sidebar:
                         c_tasks = matched
                         break
 
-        # Priority 3: Fallback for Spring season campaign window (April - May)
+        # Priority 3: 3-Month Quarter Window fallback (Apr-Jun for Q2, Oct-Dec for Q4 — Strictly excludes Jan!)
         if c_tasks.empty and date_col and date_col in tasks_df.columns:
             t_dates = DataNormalizer.parse_datetime_safely(tasks_df[date_col]).dt.date
             if selected_cycle == 'Q2-2026':
-                c_tasks = tasks_df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+                c_tasks = tasks_df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 6, 30))].copy()
             elif selected_cycle == 'Q2-2025':
-                c_tasks = tasks_df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+                c_tasks = tasks_df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 6, 30))].copy()
             elif selected_cycle == 'Q4-2026':
-                c_tasks = tasks_df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+                c_tasks = tasks_df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 12, 31))].copy()
             elif selected_cycle == 'Q4-2025':
-                c_tasks = tasks_df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
+                c_tasks = tasks_df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 12, 31))].copy()
         
 
         c_disc = disc_df[disc_df['u_certification_task'].isin(c_tasks['sys_id'])].copy() if disc_df is not None and not disc_df.empty and 'u_certification_task' in disc_df.columns else pd.DataFrame()
@@ -321,10 +321,10 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
         
     if q_t.empty:
         alias_map = {
-            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
-            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
-            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
-            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
+            'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', '2026-Q2', 'Q2'],
+            'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4', 'Q4'],
+            'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', '2025-Q2', 'Q2'],
+            'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4', 'Q4']
         }
         match_cycles = alias_map.get(q_name, [q_name])
         for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
@@ -334,16 +334,17 @@ def get_quarter_kpis(df_tasks, df_disc, q_name, start_date=None, end_date=None):
                     q_t = matched
                     break
 
+    # Priority 3: 3-Month Quarter Window fallback (Apr-Jun for Q2, Oct-Dec for Q4 — Strictly excludes Jan!)
     if q_t.empty and date_col and date_col in df_tasks.columns:
         t_dates = DataNormalizer.parse_datetime_safely(df_tasks[date_col]).dt.date
         if q_name == 'Q2-2026':
-            q_t = df_tasks[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+            q_t = df_tasks[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 6, 30))].copy()
         elif q_name == 'Q2-2025':
-            q_t = df_tasks[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+            q_t = df_tasks[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 6, 30))].copy()
         elif q_name == 'Q4-2026':
-            q_t = df_tasks[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+            q_t = df_tasks[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 12, 31))].copy()
         elif q_name == 'Q4-2025':
-            q_t = df_tasks[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
+            q_t = df_tasks[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 12, 31))].copy()
 
     # Impute due_date with exact window end date (23:59:59)
     window_deadline = pd.to_datetime(f"{e_date} 23:59:59")

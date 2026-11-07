@@ -149,7 +149,7 @@ def main():
         t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
         q2_tasks = df[(t_dates >= q2_start) & (t_dates <= q2_end)].copy()
     if q2_tasks.empty:
-        q2_aliases = ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1']
+        q2_aliases = ['Q2-2026', 'Q2_2026', 'Q2 2026', '2026-Q2', 'Q2']
         for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
             if col_c in df.columns:
                 matched = df[df[col_c].astype(str).str.strip().isin(q2_aliases)].copy()
@@ -158,7 +158,7 @@ def main():
                     break
     if q2_tasks.empty and date_col:
         t_dates = pd.to_datetime(df[date_col], errors='coerce').dt.date
-        q2_tasks = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+        q2_tasks = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 6, 30))].copy()
 
     # Calculate exact KPIs using KPIEngine directly on corporate data
     q2_kpis = kpi_engine.calculate_all_kpis(
@@ -190,12 +190,18 @@ def main():
     print(f"Late Closed Tasks (> Due)    : {n_late_q2:,}")
     print(f"Open / Unfinished at Deadline: {n_open_q2:,}")
     print("-" * 50)
-    print(f"Card 1: Completion Rate      : {completion_rate_q2:.2f}%  --> Dashboard displays: {round(completion_rate_q2)}%")
-    print(f"Card 2: Total SLA Achievement: {sla_achievement_q2:.2f}%  --> Dashboard displays: {round(sla_achievement_q2)}%")
-    print(f"KPI 3:  On-Time of Closed    : {on_time_of_closed_q2:.2f}%")
+    comp_display = f"{completion_rate_q2:.2f}%  --> Dashboard displays: {round(completion_rate_q2)}%" if completion_rate_q2 is not None else "N/A (0 tasks in cycle)"
+    sla_display = f"{sla_achievement_q2:.2f}%  --> Dashboard displays: {round(sla_achievement_q2)}%" if sla_achievement_q2 is not None else "N/A (0 tasks in cycle)"
+    ontime_display = f"{on_time_of_closed_q2:.2f}%" if on_time_of_closed_q2 is not None else "N/A"
+    print(f"Card 1: Completion Rate      : {comp_display}")
+    print(f"Card 2: Total SLA Achievement: {sla_display}")
+    print(f"KPI 3:  On-Time of Closed    : {ontime_display}")
     print("\n[CONCLUSION FOR LEADERSHIP]")
-    print(f"In your corporate dataset, Card 1 (Completion Rate) is {round(completion_rate_q2)}% ({n_closed_q2:,}/{total_q2_in_scope:,} tasks closed).")
-    print(f"Card 2 (SLA Achievement) is {round(sla_achievement_q2)}% ({n_on_time_q2:,}/{total_q2_in_scope:,} tasks closed on-time before deadline).")
+    if completion_rate_q2 is not None and sla_achievement_q2 is not None:
+        print(f"In your corporate dataset, Card 1 (Completion Rate) is {round(completion_rate_q2)}% ({n_closed_q2:,}/{total_q2_in_scope:,} tasks closed).")
+        print(f"Card 2 (SLA Achievement) is {round(sla_achievement_q2)}% ({n_on_time_q2:,}/{total_q2_in_scope:,} tasks closed on-time before deadline).")
+    else:
+        print("In your corporate dataset, Q2-2026 has no tasks recorded within the specified window.")
 
     print("\n" + "=" * 80)
     print("QUESTION 2: DAILY CLOSURE RATE & MULTI-CYCLE VELOCITY ANALYSIS")
@@ -215,13 +221,13 @@ def main():
             t_dates = pd.to_datetime(df['sys_created_on'], errors='coerce').dt.date
             c_df = df[(t_dates >= s_d) & (t_dates <= e_d)].copy()
         
-        # Priority 2: Fallback to cycle activity tags across columns
+        # Priority 2: Fallback to cycle activity tags across columns (strictly Q2 and Q4, never Q1)
         if c_df.empty:
             alias_map = {
-                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', 'Q1-2026', 'Q1_2026', 'Q1 2026', '2026-Q2', '2026-Q1'],
-                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4'],
-                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', 'Q1-2025', 'Q1_2025', 'Q1 2025', '2025-Q2', '2025-Q1'],
-                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4']
+                'Q2-2026': ['Q2-2026', 'Q2_2026', 'Q2 2026', '2026-Q2', 'Q2'],
+                'Q4-2026': ['Q4-2026', 'Q4_2026', 'Q4 2026', '2026-Q4', 'Q4'],
+                'Q2-2025': ['Q2-2025', 'Q2_2025', 'Q2 2025', '2025-Q2', 'Q2'],
+                'Q4-2025': ['Q4-2025', 'Q4_2025', 'Q4 2025', '2025-Q4', 'Q4']
             }
             match_cycles = alias_map.get(c_name, [c_name])
             for col_c in ['certification_cycle', 'u_certification_activity', 'u_certification_cycle']:
@@ -231,17 +237,17 @@ def main():
                         c_df = matched
                         break
 
-        # Priority 3: Fallback for Spring/Autumn season window
+        # Priority 3: 3-Month Quarter Window Fallback (Apr-Jun for Q2, Oct-Dec for Q4 — strictly excludes Jan!)
         if c_df.empty and 'sys_created_on' in df.columns:
             t_dates = pd.to_datetime(df['sys_created_on'], errors='coerce').dt.date
             if c_name == 'Q2-2026':
-                c_df = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 5, 31))].copy()
+                c_df = df[(t_dates >= date(2026, 4, 1)) & (t_dates <= date(2026, 6, 30))].copy()
             elif c_name == 'Q2-2025':
-                c_df = df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 5, 31))].copy()
+                c_df = df[(t_dates >= date(2025, 4, 1)) & (t_dates <= date(2025, 6, 30))].copy()
             elif c_name == 'Q4-2026':
-                c_df = df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 11, 15))].copy()
+                c_df = df[(t_dates >= date(2026, 10, 1)) & (t_dates <= date(2026, 12, 31))].copy()
             elif c_name == 'Q4-2025':
-                c_df = df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 11, 15))].copy()
+                c_df = df[(t_dates >= date(2025, 10, 1)) & (t_dates <= date(2025, 12, 31))].copy()
 
         tot = len(c_df)
         c_closed = c_df[c_df['state'].astype(str).str.lower().isin(['closed complete', '3', 'closed', 'resolved']) | c_df['closed_at'].notna()]

@@ -110,10 +110,8 @@ class CycleManager:
                 break
 
         activity_map = {
-            'Q1-2026': 'Q2-2026', 'Q1_2026': 'Q2-2026', 'Q1 2026': 'Q2-2026', '2026-Q1': 'Q2-2026',
-            'Q2-2026': 'Q2-2026', 'Q2_2026': 'Q2-2026', 'Q2 2026': 'Q2-2026', '2026-Q2': 'Q2-2026',
-            'Q4-2026': 'Q4-2026', 'Q4_2026': 'Q4-2026', 'Q4 2026': 'Q4-2026', '2026-Q4': 'Q4-2026',
-            'Q1-2025': 'Q2-2025', 'Q1_2025': 'Q2-2025', 'Q1 2025': 'Q2-2025', '2025-Q1': 'Q2-2025',
+            'Q2-2026': 'Q2-2026', 'Q2_2026': 'Q2-2026', 'Q2 2026': 'Q2-2026', '2026-Q2': 'Q2-2026', 'Q2': 'Q2-2026',
+            'Q4-2026': 'Q4-2026', 'Q4_2026': 'Q4-2026', 'Q4 2026': 'Q4-2026', '2026-Q4': 'Q4-2026', 'Q4': 'Q4-2026',
             'Q2-2025': 'Q2-2025', 'Q2_2025': 'Q2-2025', 'Q2 2025': 'Q2-2025', '2025-Q2': 'Q2-2025',
             'Q4-2025': 'Q4-2025', 'Q4_2025': 'Q4-2025', 'Q4 2025': 'Q4-2025', '2025-Q4': 'Q4-2025',
         }
@@ -171,7 +169,17 @@ class CycleManager:
                 if act_clean in activity_map:
                     return activity_map[act_clean]
 
-            # STRICT: Any task outside defined campaign dates with no matching activity is Out of Campaign.
+            # 3-Month Quarter Window fallback (Apr 1 - Jun 30 for Q2, Oct 1 - Dec 31 for Q4 — strictly excludes Jan!)
+            if date(2026, 4, 1) <= d <= date(2026, 6, 30):
+                return 'Q2-2026'
+            if date(2026, 10, 1) <= d <= date(2026, 12, 31):
+                return 'Q4-2026'
+            if date(2025, 4, 1) <= d <= date(2025, 6, 30):
+                return 'Q2-2025'
+            if date(2025, 10, 1) <= d <= date(2025, 12, 31):
+                return 'Q4-2025'
+
+            # STRICT: Any task outside defined campaign dates and outside Q2/Q4 3-month quarters is Out of Campaign.
             return 'Out of Campaign'
 
         if act_col:
