@@ -6,6 +6,8 @@ The system supports **ServiceNow Table API** extraction as well as a full **offl
 
 > 📖 **Quick Overview:** For a brief, to-the-point summary of the pipeline, business cycles, and operating modes, see the **[End-to-End Project Flow Guide](docs/PROJECT_FLOW.md)**.
 >
+> 🚀 **Complete Pipeline & Technologies Specification:** For the complete end-to-end architecture, technology stack, dataset filters, table referencing, and full logic for all 12 KPIs computation, see the **[Complete Pipeline Flow & Technologies Specification](docs/COMPLETE_PIPELINE_FLOW_AND_TECHNOLOGIES.md)**.
+>
 > 📊 **Executive Leadership Q&A & Technical Audit:** For the complete evidence-backed answers to all presentation slide questions (Q2/Q4 SLA Achievement, Daily Closure Rate velocity, Certifier Productivity, US Holiday, CSDM Domains, APM RITMs, and ≥95.0% target documentation), see the **[Leadership Presentation Q&A Audit](docs/leadership_presentation_qa_responses.md)** and the **[Executive KPI Briefing](docs/executive_leadership_kpi_briefing.md)**.
 
 ---
